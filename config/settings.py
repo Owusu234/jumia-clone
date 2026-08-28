@@ -98,7 +98,7 @@ DATABASES = {
 }
 
 # ✅ ALLOWED_HOSTS: Fixed typo + made configurable
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,https://shopvibe.railway.internal,https://shopvibe.up.railway.app").split(",")
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,shopvibe.railway.internal,shopvibe.up.railway.app").split(",")
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
