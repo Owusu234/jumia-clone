@@ -54,7 +54,7 @@ INSTALLED_APPS = [
 # ✅ MIDDLEWARE: Add Whitenoise for static files (right after SecurityMiddleware)
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # ✅ ADDED
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # ✅ MUST be right after SecurityMiddleware
     'corsheaders.middleware.CorsMiddleware', 
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -97,7 +97,7 @@ DATABASES = {
     )
 }
 
-# ✅ ALLOWED_HOSTS: Fixed typo + made configurable
+# ✅ ALLOWED_HOSTS: Fixed format (no https:// prefixes)
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,shopvibe.railway.internal,shopvibe.up.railway.app").split(",")
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -115,11 +115,15 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ✅ STATIC FILES: Whitenoise configuration for production
 STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"  # ✅ ADDED: Where collectstatic puts files
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"  # ✅ ADDED
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")  # ✅ Use os.path.join for reliability
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"  # ✅ Compress & cache static files
+
+# ✅ WHITENOISE: Additional settings for production
+WHITENOISE_MANIFEST_STRICT = False  # ✅ Prevent errors if a static file is missing
+WHITENOISE_ROOT = os.path.join(BASE_DIR, "staticfiles")  # ✅ Explicit root for Whitenoise
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "store:home"
