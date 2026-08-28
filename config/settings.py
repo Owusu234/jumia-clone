@@ -18,6 +18,16 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+if os.getenv('DJANGO_DEBUG', 'False') == 'False':
+    SECURE_SSL_REDIRECT = False  # ✅ Railway handles HTTPS, so Django shouldn't redirect
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+
 # ✅ DEBUG: Must be False in production
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
@@ -114,15 +124,3 @@ MEDIA_ROOT = BASE_DIR / "media"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "store:home"
 LOGOUT_REDIRECT_URL = "store:home"
-
-# ✅ PRODUCTION SECURITY SETTINGS (only active when DEBUG=False)
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True  # Redirect HTTP → HTTPS
-    SECURE_HSTS_SECONDS = 3600  # Enable HSTS for 1 hour
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SESSION_COOKIE_SECURE = True  # Cookies only over HTTPS
-    CSRF_COOKIE_SECURE = True
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'DENY'
