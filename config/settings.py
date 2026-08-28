@@ -57,7 +57,7 @@ MIDDLEWARE = [
 ]
 
 # ✅ CORS & CSRF: Make domains configurable via env var
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000","https://shopvibe.railway.internal").split(",")
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000,https://shopvibe.railway.internal").split(",")
 
 CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000,https://shopvibe.railway.internal").split(",")
 
