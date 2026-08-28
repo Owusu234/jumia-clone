@@ -130,9 +130,3 @@ LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "store:home"
 LOGOUT_REDIRECT_URL = "store:home"
 
-# At bottom of settings.py - TEMPORARY DEBUG
-import sys
-print(f"DEBUG: STATIC_ROOT = {STATIC_ROOT}", file=sys.stderr)
-print(f"DEBUG: Exists = {os.path.exists(STATIC_ROOT)}", file=sys.stderr)
-if os.path.exists(STATIC_ROOT):
-    print(f"DEBUG: Contents = {os.listdir(STATIC_ROOT)[:5]}", file=sys.stderr)
