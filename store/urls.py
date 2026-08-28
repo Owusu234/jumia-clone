@@ -29,7 +29,7 @@ urlpatterns = [
     path("checkout/", views.checkout, name="checkout"),
     path("checkout/initialize/", views.initialize_paystack_payment, name="initialize_paystack"),
     path("checkout/verify/", views.verify_paystack_payment, name="verify_paystack"),
-
+    path('checkout/callback/', views.paystack_callback, name='paystack_callback'),
     
     # ==================== USER ORDERS ====================
 

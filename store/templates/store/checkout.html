@@ -27,9 +27,10 @@
         align-items: center;
         justify-content: center;
         gap: 8px;
+        width: 100%;
     }
     .paystack-btn:hover { background: #218838; }
-    .paystack-btn:disabled { background: #6c757d; cursor: not-allowed; }
+    .paystack-btn:disabled { background: #6c757d; cursor: not-allowed; opacity: 0.7; }
     .error-alert {
         background: var(--danger-bg);
         border: 1px solid var(--danger);
@@ -40,10 +41,42 @@
         display: none;
     }
     .error-alert.show { display: block; animation: slideDown 0.3s ease; }
+    .success-alert {
+        background: var(--success-bg);
+        border: 1px solid var(--success);
+        color: var(--success);
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        display: none;
+    }
+    .success-alert.show { display: block; animation: slideDown 0.3s ease; }
     @keyframes slideDown {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
     }
+    /* Loading overlay */
+    .payment-loading {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.7);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        flex-direction: column;
+        color: white;
+    }
+    .payment-loading.show { display: flex; }
+    .payment-loading .spinner {
+        width: 50px; height: 50px;
+        border: 4px solid rgba(255,255,255,0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 
 <div class="container py-4">
@@ -52,7 +85,13 @@
     <!-- Error Display -->
     <div id="checkout-error" class="error-alert" role="alert">
         <i class="bi bi-exclamation-triangle me-2"></i><span id="error-message"></span>
-        <button type="button" class="btn-close float-end" onclick="this.parentElement.classList.remove('show')"></button>
+        <button type="button" class="btn-close float-end" onclick="hideError()"></button>
+    </div>
+    
+    <!-- Success Display -->
+    <div id="checkout-success" class="success-alert" role="alert">
+        <i class="bi bi-check-circle me-2"></i><span id="success-message"></span>
+        <button type="button" class="btn-close float-end" onclick="hideSuccess()"></button>
     </div>
     
     <div class="row g-4">
@@ -65,10 +104,14 @@
                     <div class="d-flex align-items-center gap-3">
                         <img src="{{ item.product.get_image }}" 
                              style="width: 60px; height: 60px; object-fit: contain; border-radius: 8px; background: #fff;" 
-                             onerror="this.src='https://via.placeholder.com/60?text=No+Image'">
+                             onerror="this.src='https://via.placeholder.com/60?text=No+Image'"
+                             alt="{{ item.product.name }}">
                         <div>
                             <h6 class="fw-bold mb-1">{{ item.product.name }}</h6>
                             <small class="text-muted">Qty: {{ item.qty }} × GH₵{{ item.product.price }}</small>
+                            {% if item.color %}
+                            <small class="text-muted d-block">Color: {{ item.color }}</small>
+                            {% endif %}
                         </div>
                     </div>
                     <span class="fw-bold">GH₵{{ item.subtotal|floatformat:2 }}</span>
@@ -98,16 +141,30 @@
                 </div>
                 
                 <!-- Paystack Payment Button -->
-                <button type="button" id="paystack-button" class="paystack-btn w-100" onclick="payWithPaystack()">
+                <button type="button" id="paystack-button" class="paystack-btn" onclick="payWithPaystack()">
                     <i class="bi bi-lock"></i> Pay Securely with Paystack
                 </button>
                 
                 <p class="text-muted small mt-3 text-center">
                     <i class="bi bi-shield-check me-1"></i> Encrypted payment powered by Paystack
                 </p>
+                
+                <!-- Cancel/Back Link -->
+                <div class="text-center mt-3">
+                    <a href="{% url 'store:cart' %}" class="text-muted small">
+                        <i class="bi bi-arrow-left me-1"></i> Return to Cart
+                    </a>
+                </div>
             </div>
         </div>
     </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="payment-loading" class="payment-loading">
+    <div class="spinner"></div>
+    <div>Processing payment...</div>
+    <small class="text-muted mt-2">Please do not close this window</small>
 </div>
 
 <!-- ✅ Paystack Library -->
@@ -115,90 +172,199 @@
 
 <script>
 (function() {
-    try {
-        // 1️⃣ Safe Django-to-JS Bridge
-        const PK = "{{ paystack_public_key|default:'pk_test_placeholder'|escapejs }}";
-        const EMAIL = "{{ user.email|default:''|escapejs }}";
-        const AMOUNT = {{ total_kobo|default:0 }};
-        
-        // ✅ FIXED: Clean Django URL tags
-        const INIT_URL = "{% url 'store:initialize_paystack' %}";
-        const VERIFY_URL = "{% url 'store:verify_paystack' %}";
-        
-        const USER_ID = {{ user.id|default:0 }};
-        const CART_JSON = {% if cart_json %}{{ cart_json|safe }}{% else %}{}{% endif %};
-        
-        // 2️⃣ Payment Handler
-        window.payWithPaystack = function() {
-            const btn = document.getElementById('paystack-button');
-            if (!btn) return;
-            
-            const originalHTML = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Connecting...';
-            
-            if (!PK || PK.includes("placeholder")) {
-                alert("⚠️ Payment configuration incomplete. Contact support.");
-                btn.disabled = false; btn.innerHTML = originalHTML; return;
-            }
-            if (typeof PaystackPop === "undefined") {
-                alert("🌐 Payment library failed to load. Check your connection.");
-                btn.disabled = false; btn.innerHTML = originalHTML; return;
-            }
-            
-            fetch(INIT_URL, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": "{{ csrf_token }}"
-                },
-                body: JSON.stringify({ cart: CART_JSON, user_id: USER_ID })
-            })
-            .then(async res => {
-                const ct = res.headers.get("content-type");
-                if (!ct || !ct.includes("application/json")) {
-                    const text = await res.text();
-                    console.error("🚨 Server returned HTML:", text.substring(0, 200));
-                    throw new Error("Server error. Check Django terminal.");
-                }
-                return res.json();
-            })
-            .then(data => {
-                if (data.success && data.authorization_url) {
-                    const handler = PaystackPop.setup({
-                        key: PK,
-                        email: EMAIL,
-                        amount: AMOUNT,
-                        currency: "GHS",
-                        ref: data.reference || "SV-" + Date.now(),
-                        callback: r => window.location.href = VERIFY_URL + "?reference=" + r.reference,
-                        onClose: () => {
-                            btn.disabled = false;
-                            btn.innerHTML = originalHTML;
-                            alert("Payment window closed. Please try again.");
-                        }
-                    });
-                    handler.openIframe();
-                } else {
-                    throw new Error(data.error || "Initialization failed");
-                }
-            })
-            .catch(err => {
-                console.error("💥 Checkout failed:", err);
-                alert("Payment error: " + err.message);
-                btn.disabled = false;
-                btn.innerHTML = originalHTML;
-            });
-        };
-        
-        // 3️⃣ Attach on load
-        document.addEventListener("DOMContentLoaded", () => {
-            const btn = document.getElementById("paystack-button");
-            if (btn) btn.addEventListener("click", window.payWithPaystack);
-        });
-    } catch (e) {
-        console.error("💀 Checkout script crashed on load:", e);
+    'use strict';
+    
+    // 1️⃣ Safe Django-to-JS Bridge
+    const PK = "{{ paystack_public_key|default:'pk_test_placeholder'|escapejs }}";
+    const EMAIL = "{{ user.email|default:''|escapejs }}";
+    const AMOUNT = {{ total_kobo|default:0 }};
+    const REFERENCE = "{{ cart_json|default:'{}'|escapejs }}";
+    
+    // ✅ FIXED: Clean Django URL tags
+    const INIT_URL = "{% url 'store:initialize_paystack' %}";
+    const VERIFY_URL = "{% url 'store:verify_paystack' %}";
+    const CHECKOUT_URL = "{% url 'store:checkout' %}";
+    
+    const USER_ID = {{ user.id|default:0 }};
+    
+    // 2️⃣ UI Helpers
+    function showError(msg) {
+        const el = document.getElementById('checkout-error');
+        const span = document.getElementById('error-message');
+        if (el && span) {
+            span.textContent = msg;
+            el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 5000);
+        }
     }
+    
+    function showSuccess(msg) {
+        const el = document.getElementById('checkout-success');
+        const span = document.getElementById('success-message');
+        if (el && span) {
+            span.textContent = msg;
+            el.classList.add('show');
+        }
+    }
+    
+    function hideError() {
+        const el = document.getElementById('checkout-error');
+        if (el) el.classList.remove('show');
+    }
+    
+    function hideSuccess() {
+        const el = document.getElementById('checkout-success');
+        if (el) el.classList.remove('show');
+    }
+    
+    function showLoading() {
+        const el = document.getElementById('payment-loading');
+        if (el) el.classList.add('show');
+    }
+    
+    function hideLoading() {
+        const el = document.getElementById('payment-loading');
+        if (el) el.classList.remove('show');
+    }
+    
+    function resetButton(btn, originalHTML) {
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
+    
+    // 3️⃣ Payment Handler with Cancellation Fix
+    window.payWithPaystack = function() {
+        const btn = document.getElementById('paystack-button');
+        if (!btn) return;
+        
+        const originalHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Connecting...';
+        
+        // Validate config
+        if (!PK || PK.includes("placeholder")) {
+            showError("⚠️ Payment configuration incomplete. Contact support.");
+            resetButton(btn, originalHTML);
+            return;
+        }
+        if (typeof PaystackPop === "undefined") {
+            showError("🌐 Payment library failed to load. Check your connection.");
+            resetButton(btn, originalHTML);
+            return;
+        }
+        
+        showLoading();
+        
+        // Initialize payment
+        fetch(INIT_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            body: JSON.stringify({ cart: REFERENCE, user_id: USER_ID })
+        })
+        .then(async res => {
+            const ct = res.headers.get("content-type");
+            if (!ct || !ct.includes("application/json")) {
+                const text = await res.text();
+                console.error("🚨 Server returned HTML:", text.substring(0, 200));
+                throw new Error("Server error. Check Django terminal.");
+            }
+            return res.json();
+        })
+        .then(data => {
+            hideLoading();
+            
+            if (data.success && data.authorization_url) {
+                // ✅ FIXED: Proper PaystackPop setup with onClose handler
+                const handler = PaystackPop.setup({
+                    key: PK,
+                    email: EMAIL,
+                    amount: AMOUNT,
+                    currency: "GHS",
+                    ref: data.reference || "SV-" + Date.now(),
+                    
+                    // ✅ SUCCESS: Payment completed
+                    callback: function(response) {
+                        console.log("✅ Payment callback:", response);
+                        showLoading();
+                        
+                        // Verify payment on backend
+                        fetch(VERIFY_URL + "?reference=" + response.reference)
+                            .then(res => res.json())
+                            .then(verifyData => {
+                                hideLoading();
+                                if (verifyData.success) {
+                                    showSuccess("✅ Payment successful! Redirecting...");
+                                    setTimeout(() => {
+                                        window.location.href = verifyData.redirect_url || "/order/success/";
+                                    }, 1500);
+                                } else {
+                                    showError(verifyData.error || "Payment verification failed");
+                                    resetButton(btn, originalHTML);
+                                }
+                            })
+                            .catch(err => {
+                                hideLoading();
+                                console.error("Verification error:", err);
+                                showError("⚠️ Could not verify payment. Please check your orders.");
+                                resetButton(btn, originalHTML);
+                            });
+                    },
+                    
+                    // ✅ CANCELLED: User closed modal - THIS FIXES THE STUCK MODAL
+                    onClose: function() {
+                        console.log("❌ Payment modal closed by user");
+                        hideLoading();
+                        resetButton(btn, originalHTML);
+                        
+                        // Show friendly message
+                        alert("💬 Payment was cancelled. You can try again when ready.");
+                        
+                        // Optional: Redirect back to checkout or stay on page
+                        // window.location.href = CHECKOUT_URL; // Uncomment to redirect
+                    }
+                });
+                
+                // Open the payment popup
+                handler.openIframe();
+                
+            } else {
+                hideLoading();
+                throw new Error(data.error || "Payment initialization failed");
+            }
+        })
+        .catch(err => {
+            hideLoading();
+            console.error("💥 Checkout failed:", err);
+            showError("Payment error: " + err.message);
+            resetButton(btn, originalHTML);
+        });
+    };
+    
+    // 4️⃣ Attach on load
+    document.addEventListener("DOMContentLoaded", function() {
+        const btn = document.getElementById("paystack-button");
+        if (btn) {
+            btn.addEventListener("click", window.payWithPaystack);
+        }
+        
+        // Auto-hide alerts after 5 seconds
+        setTimeout(function() {
+            hideError();
+            hideSuccess();
+        }, 5000);
+    });
+    
+    // 5️⃣ Handle page visibility change (user switches tabs)
+    document.addEventListener("visibilitychange", function() {
+        if (document.hidden) {
+            // User switched away - could be during payment
+            console.log("Page hidden during checkout");
+        }
+    });
+    
 })();
 </script>
 {% endblock %}

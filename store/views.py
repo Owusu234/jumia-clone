@@ -1,7 +1,9 @@
 
 # store/views.py
+import logging
 import uuid
 import json
+import requests
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required,user_passes_test
@@ -19,7 +21,6 @@ from supabase import create_client
 from paystackapi.paystack import Paystack
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-import requests
 from datetime import datetime, timedelta
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models.functions import TruncDay,TruncHour
@@ -27,6 +28,7 @@ from datetime import timezone as dt_timezone
 from django.views.decorators.http import require_POST
 from django.db import transaction
 from django.contrib.auth import login
+
 
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
@@ -36,7 +38,7 @@ from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignu
 from django.http import JsonResponse
 import re
 from django.core.paginator import Paginator
-import logging
+# import logging
 from .models import AdminNotification
 from .decorators import seller_approved_required
 # ==================== SUPABASE CLIENT & HELPERS ====================
@@ -650,92 +652,97 @@ def update_cart(req):
         return JsonResponse({'success': False, 'error': str(e)})
 # store/views.py
 
+logger = logging.getLogger(__name__)
 
 @login_required
 def checkout(req):
     """Display checkout page with Paystack integration"""
-
+    
     cart_data = req.session.get('cart', {})
-
+    
     if not isinstance(cart_data, dict):
         cart_data = {}
-
+    
     if not cart_data:
         messages.warning(req, "🛒 Your cart is empty.")
         return redirect("store:cart")
-
+    
     items = []
     total = Decimal('0.00')
     clean_cart = {}
-
+    
     for pid, item_data in cart_data.items():
-
         try:
             product = Product.objects.get(id=int(pid))
-
+            
             quantity = 1
             color = ''
-
+            
             # Handle dictionary structure
             if isinstance(item_data, dict):
                 quantity = item_data.get('quantity', 1)
                 color = item_data.get('color', '')
-
             # Handle old integer structure
             elif isinstance(item_data, (int, float)):
                 quantity = item_data
-
+            
             # Flatten nested dictionaries
             while isinstance(quantity, dict):
                 quantity = quantity.get('quantity', 1)
-
+            
             # Safe integer conversion
             try:
                 quantity = int(quantity)
                 if quantity < 1:
                     quantity = 1
-            except:
+            except (ValueError, TypeError):
                 quantity = 1
-
+            
             # Safe subtotal calculation
             subtotal = product.price * Decimal(str(quantity))
-
+            
             items.append({
                 "product": product,
                 "qty": quantity,
                 "color": color,
                 "subtotal": subtotal
             })
-
+            
             total += subtotal
-
+            
             # Save cleaned structure
             clean_cart[str(pid)] = {
                 "quantity": quantity,
                 "color": color
             }
-
+            
         except Product.DoesNotExist:
+            logger.warning(f"Product {pid} not found during checkout")
             continue
-
         except Exception as e:
-            print("Checkout Error:", e)
+            logger.error(f"Checkout error processing item {pid}: {e}")
             continue
-
+    
     # Auto-fix corrupted cart data
     if clean_cart != cart_data:
         req.session['cart'] = clean_cart
         req.session.modified = True
-
+    
     # Convert to pesewas/kobo for Paystack
     total_kobo = int(total * 100)
-
+    
+    # Prepare cart JSON for JavaScript (safe serialization)
+    import json
+    cart_json = json.dumps(clean_cart, default=str)
+    
     return render(req, "store/checkout.html", {
         "items": items,
         "total": total,
         "total_kobo": total_kobo,
         "paystack_public_key": settings.PAYSTACK_PUBLIC_KEY,
-        "cart_count": len(items)
+        "cart_count": len(items),
+        "cart_json": cart_json,  # For JavaScript bridge
+        "site_url": settings.SITE_URL,  # For callback URL
     })
 
 
@@ -888,6 +895,131 @@ def initialize_paystack_payment(req):
     except Exception as e:
         logger.exception(f"Unexpected error in initialize_paystack_payment: {e}")
         return JsonResponse({'error': 'An unexpected error occurred'}, status=500)
+
+@login_required
+def paystack_callback(req):
+    """Handle Paystack payment callback"""
+    import logging
+    import requests
+    from decimal import Decimal
+    from django.conf import settings
+    from store.models import Order, OrderItem, Product
+    
+    logger = logging.getLogger(__name__)
+    
+    reference = req.GET.get('reference')
+    
+    if not reference:
+        logger.warning("Callback without reference")
+        return JsonResponse({
+            'success': False, 
+            'error': 'No payment reference'
+        }, status=400)
+    
+    try:
+        # Verify payment with Paystack
+        verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
+        headers = {
+            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
+            "Content-Type": "application/json",
+        }
+        
+        response = requests.get(verify_url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Check if payment was successful
+        if not (data.get('status') and data.get('data', {}).get('status') == 'success'):
+            logger.warning(f"Payment not successful: {reference}")
+            return JsonResponse({
+                'success': False,
+                'error': 'Payment not completed or cancelled',
+                'status': data.get('data', {}).get('status', 'unknown')
+            }, status=400)
+        
+        # Payment successful - create order
+        paystack_data = data['data']
+        paid_amount_ghs = Decimal(paystack_data['amount']) / Decimal('100')
+        
+        # Get cart from session
+        cart_data = req.session.get('cart', {})
+        
+        # Create order
+        order = Order.objects.create(
+            user=req.user,
+            reference=reference,
+            total_amount=paid_amount_ghs,
+            payment_status='paid',
+            payment_method='paystack',
+            paystack_response=paystack_data,
+            customer_email=paystack_data.get('customer', {}).get('email', req.user.email),
+        )
+        
+        # Process cart items
+        total_calculated = Decimal('0')
+        items_processed = 0
+        
+        for pid, item in cart_data.items():
+            try:
+                if isinstance(item, dict):
+                    qty = item.get('quantity', 1)
+                    while isinstance(qty, dict):
+                        qty = qty.get('quantity', 1)
+                    qty = max(1, int(float(qty)))
+                else:
+                    qty = max(1, int(float(item)))
+                
+                product = Product.objects.get(id=int(pid), is_active=True)
+                
+                # Reduce stock
+                if product.stock >= qty:
+                    product.stock -= qty
+                    product.save()
+                
+                # Create order item
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=qty,
+                    price=product.price,
+                    subtotal=product.price * qty,
+                )
+                
+                total_calculated += product.price * qty
+                items_processed += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing item {pid}: {e}")
+                continue
+        
+        # Clear cart
+        req.session['cart'] = {}
+        req.session.pop('paystack_ref', None)
+        req.session.pop('paystack_amount', None)
+        req.session.modified = True
+        
+        logger.info(f"Order created from callback: #{order.id}")
+        
+        return JsonResponse({
+            'success': True,
+            'order_id': order.id,
+            'message': 'Payment successful'
+        })
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"Verification timeout: {reference}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Payment verification timeout'
+        }, status=503)
+        
+    except Exception as e:
+        logger.exception(f"Callback error: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 @login_required
 def verify_paystack_payment(req):
