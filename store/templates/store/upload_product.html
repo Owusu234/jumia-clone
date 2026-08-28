@@ -1,0 +1,145 @@
+{% extends "store/base.html" %}
+{% block title %}Upload Product | ShopVibe{% endblock %}
+{% block content %}
+<style>
+    .upload-card { 
+        background: var(--card); 
+        border: 1px solid var(--border); 
+        border-radius: 12px; 
+        padding: 24px; 
+    }
+    .form-control, .form-select { 
+        background: var(--bg) !important; 
+        border: 1px solid var(--border) !important; 
+        color: var(--tx) !important; 
+    }
+    .form-control:focus, .form-select:focus { 
+        border-color: var(--p) !important; 
+        box-shadow: 0 0 0 3px rgba(246, 139, 30, 0.15) !important; 
+    }
+</style>
+
+<div class="container py-4">
+    <div class="upload-card">
+        <h3 class="fw-bold mb-4">📦 Upload New Product</h3>
+        
+        <form method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+            
+            <div class="row g-3">
+                <!-- Product Name -->
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Product Name *</label>
+                    {{ form.name }}
+                    {% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>{% endif %}
+                </div>
+                
+                <!-- Category -->
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Category *</label>
+                    {{ form.category }}
+                    {% if form.category.errors %}<div class="text-danger small mt-1">{{ form.category.errors.0 }}</div>{% endif %}
+                </div>
+                
+                <!-- Description -->
+                <div class="col-12">
+                    <label class="form-label fw-medium">Description</label>
+                    {{ form.description }}
+                    {% if form.description.errors %}<div class="text-danger small mt-1">{{ form.description.errors.0 }}</div>{% endif %}
+                </div>
+                
+                <!-- Price & Stock -->
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Price (GH₵) *</label>
+                    {{ form.price }}
+                    {% if form.price.errors %}<div class="text-danger small mt-1">{{ form.price.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Stock Quantity *</label>
+                    {{ form.stock }}
+                    {% if form.stock.errors %}<div class="text-danger small mt-1">{{ form.stock.errors.0 }}</div>{% endif %}
+                </div>
+                
+                <!-- Product Image -->
+                <div class="col-12">
+                    <label class="form-label fw-medium">Product Image</label>
+                    {{ form.image }}
+                    <div class="form-text">Recommended: 800x800px, PNG or JPG</div>
+                    {% if form.image.errors %}<div class="text-danger small mt-1">{{ form.image.errors.0 }}</div>{% endif %}
+                </div>
+                
+                <!-- Colors & Warranty -->
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Available Colors</label>
+                    {{ form.colors }}
+                    <div class="form-text">Comma-separated: Red, Blue, Black</div>
+                    {% if form.colors.errors %}<div class="text-danger small mt-1">{{ form.colors.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Warranty</label>
+                    {{ form.warranty }}
+                    <div class="form-text">e.g., 1 Year Manufacturer Warranty</div>
+                    {% if form.warranty.errors %}<div class="text-danger small mt-1">{{ form.warranty.errors.0 }}</div>{% endif %}
+                </div>
+
+                <!-- ── Optional VR / 3D Section ── -->
+                <div class="col-12">
+                    <div class="p-3 rounded border border-theme" style="border-style:dashed !important;">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="vrToggle" name="vr_enabled"
+                                   onchange="document.getElementById('vrFields').style.display=this.checked?'block':'none'">
+                            <label class="form-check-label fw-medium" for="vrToggle">
+                                🥽 Add 3D / VR View <span class="badge bg-primary-subtle text-primary ms-1" style="font-size:0.7rem;">Optional</span>
+                            </label>
+                        </div>
+                        <div class="form-text mt-1">Let buyers rotate and inspect your product in 3D.</div>
+
+                        <div id="vrFields" style="display:none;" class="mt-3">
+                            <!-- VR type choice -->
+                            <label class="form-label fw-medium">Content Type</label>
+                            <div class="d-flex gap-2 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="vr_type" id="vrType3d" value="3d_model"
+                                           checked onchange="toggleVrType()">
+                                    <label class="form-check-label" for="vrType3d">🧊 3D Model <small class="text-muted">(GLB/GLTF)</small></label>
+                                </div>
+                                <div class="form-check ms-3">
+                                    <input class="form-check-input" type="radio" name="vr_type" id="vrType360" value="360_image"
+                                           onchange="toggleVrType()">
+                                    <label class="form-check-label" for="vrType360">🌐 360° Photo <small class="text-muted">(JPG/PNG)</small></label>
+                                </div>
+                            </div>
+
+                            <!-- 3D model upload -->
+                            <div id="field3d">
+                                <label class="form-label fw-medium">3D Model File</label>
+                                <input type="file" name="vr_model" accept=".glb,.gltf" class="form-control">
+                                <div class="form-text">Accepted: .glb or .gltf · Max 50 MB · Source: <a href="https://sketchfab.com" target="_blank">Sketchfab</a>, <a href="https://poly.pizza" target="_blank">Poly Pizza</a></div>
+                            </div>
+
+                            <!-- 360 image upload -->
+                            <div id="field360" style="display:none;">
+                                <label class="form-label fw-medium">360° Photo</label>
+                                <input type="file" name="vr_image" accept="image/*" class="form-control">
+                                <div class="form-text">Must be equirectangular (2:1 ratio, e.g. 4096×2048px) · JPG or PNG</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ── End VR Section ── -->
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-lg w-100 mt-4">
+                <i class="bi bi-cloud-upload me-2"></i>Upload Product
+            </button>
+        </form>
+    </div>
+</div>
+<script>
+function toggleVrType() {
+    const is3d = document.getElementById('vrType3d').checked;
+    document.getElementById('field3d').style.display  = is3d ? 'block' : 'none';
+    document.getElementById('field360').style.display = is3d ? 'none'  : 'block';
+}
+</script>
+{% endblock %}

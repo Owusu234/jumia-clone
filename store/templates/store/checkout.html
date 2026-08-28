@@ -1,0 +1,204 @@
+{% extends "store/base.html" %}
+{% block title %}Checkout | ShopVibe{% endblock %}
+
+{% block content %}
+<style>
+    .checkout-card { 
+        background: var(--card); 
+        border: 1px solid var(--border); 
+        border-radius: 12px; 
+        padding: 24px; 
+    }
+    .checkout-item { 
+        border-bottom: 1px solid var(--border); 
+        padding: 12px 0; 
+    }
+    .checkout-item:last-child { border-bottom: none; }
+    .paystack-btn {
+        background: #28a745;
+        color: white;
+        border: none;
+        padding: 14px;
+        font-weight: 700;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+    .paystack-btn:hover { background: #218838; }
+    .paystack-btn:disabled { background: #6c757d; cursor: not-allowed; }
+    .error-alert {
+        background: var(--danger-bg);
+        border: 1px solid var(--danger);
+        color: var(--danger);
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        display: none;
+    }
+    .error-alert.show { display: block; animation: slideDown 0.3s ease; }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+<div class="container py-4">
+    <h2 class="fw-bold mb-4">🔐 Secure Checkout</h2>
+    
+    <!-- Error Display -->
+    <div id="checkout-error" class="error-alert" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i><span id="error-message"></span>
+        <button type="button" class="btn-close float-end" onclick="this.parentElement.classList.remove('show')"></button>
+    </div>
+    
+    <div class="row g-4">
+        <!-- Order Summary -->
+        <div class="col-lg-8">
+            <div class="checkout-card">
+                <h5 class="fw-bold mb-3">📦 Order Items</h5>
+                {% for item in items %}
+                <div class="checkout-item d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-3">
+                        <img src="{{ item.product.get_image }}" 
+                             style="width: 60px; height: 60px; object-fit: contain; border-radius: 8px; background: #fff;" 
+                             onerror="this.src='https://via.placeholder.com/60?text=No+Image'">
+                        <div>
+                            <h6 class="fw-bold mb-1">{{ item.product.name }}</h6>
+                            <small class="text-muted">Qty: {{ item.qty }} × GH₵{{ item.product.price }}</small>
+                        </div>
+                    </div>
+                    <span class="fw-bold">GH₵{{ item.subtotal|floatformat:2 }}</span>
+                </div>
+                {% empty %}
+                <p class="text-muted">Your cart is empty.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Payment Section -->
+        <div class="col-lg-4">
+            <div class="checkout-card">
+                <h5 class="fw-bold mb-3">💳 Payment Summary</h5>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Subtotal</span>
+                    <span>GH₵{{ total|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Shipping</span>
+                    <span class="text-success">Free</span>
+                </div>
+                <hr class="border-theme">
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="fw-bold fs-5">Total</span>
+                    <span class="fw-bold fs-5 text-primary">GH₵{{ total|floatformat:2 }}</span>
+                </div>
+                
+                <!-- Paystack Payment Button -->
+                <button type="button" id="paystack-button" class="paystack-btn w-100" onclick="payWithPaystack()">
+                    <i class="bi bi-lock"></i> Pay Securely with Paystack
+                </button>
+                
+                <p class="text-muted small mt-3 text-center">
+                    <i class="bi bi-shield-check me-1"></i> Encrypted payment powered by Paystack
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ Paystack Library -->
+<script src="https://js.paystack.co/v1/inline.js"></script>
+
+<script>
+(function() {
+    try {
+        // 1️⃣ Safe Django-to-JS Bridge
+        const PK = "{{ paystack_public_key|default:'pk_test_placeholder'|escapejs }}";
+        const EMAIL = "{{ user.email|default:''|escapejs }}";
+        const AMOUNT = {{ total_kobo|default:0 }};
+        
+        // ✅ FIXED: Clean Django URL tags
+        const INIT_URL = "{% url 'store:initialize_paystack' %}";
+        const VERIFY_URL = "{% url 'store:verify_paystack' %}";
+        
+        const USER_ID = {{ user.id|default:0 }};
+        const CART_JSON = {% if cart_json %}{{ cart_json|safe }}{% else %}{}{% endif %};
+        
+        // 2️⃣ Payment Handler
+        window.payWithPaystack = function() {
+            const btn = document.getElementById('paystack-button');
+            if (!btn) return;
+            
+            const originalHTML = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Connecting...';
+            
+            if (!PK || PK.includes("placeholder")) {
+                alert("⚠️ Payment configuration incomplete. Contact support.");
+                btn.disabled = false; btn.innerHTML = originalHTML; return;
+            }
+            if (typeof PaystackPop === "undefined") {
+                alert("🌐 Payment library failed to load. Check your connection.");
+                btn.disabled = false; btn.innerHTML = originalHTML; return;
+            }
+            
+            fetch(INIT_URL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": "{{ csrf_token }}"
+                },
+                body: JSON.stringify({ cart: CART_JSON, user_id: USER_ID })
+            })
+            .then(async res => {
+                const ct = res.headers.get("content-type");
+                if (!ct || !ct.includes("application/json")) {
+                    const text = await res.text();
+                    console.error("🚨 Server returned HTML:", text.substring(0, 200));
+                    throw new Error("Server error. Check Django terminal.");
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.success && data.authorization_url) {
+                    const handler = PaystackPop.setup({
+                        key: PK,
+                        email: EMAIL,
+                        amount: AMOUNT,
+                        currency: "GHS",
+                        ref: data.reference || "SV-" + Date.now(),
+                        callback: r => window.location.href = VERIFY_URL + "?reference=" + r.reference,
+                        onClose: () => {
+                            btn.disabled = false;
+                            btn.innerHTML = originalHTML;
+                            alert("Payment window closed. Please try again.");
+                        }
+                    });
+                    handler.openIframe();
+                } else {
+                    throw new Error(data.error || "Initialization failed");
+                }
+            })
+            .catch(err => {
+                console.error("💥 Checkout failed:", err);
+                alert("Payment error: " + err.message);
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
+            });
+        };
+        
+        // 3️⃣ Attach on load
+        document.addEventListener("DOMContentLoaded", () => {
+            const btn = document.getElementById("paystack-button");
+            if (btn) btn.addEventListener("click", window.payWithPaystack);
+        });
+    } catch (e) {
+        console.error("💀 Checkout script crashed on load:", e);
+    }
+})();
+</script>
+{% endblock %}

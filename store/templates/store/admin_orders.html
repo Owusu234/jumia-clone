@@ -1,0 +1,94 @@
+{% extends "store/base.html" %}
+{% block title %}Admin Orders | ShopVibe{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">📦 Order Management</h2>
+    <div class="d-flex gap-2">
+        <a href="{% url 'store:admin_dashboard' %}" class="btn btn-outline-secondary">← Dashboard</a>
+        <a href="{% url 'store:admin_analytics' %}" class="btn btn-primary">📊 Analytics</a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Search</label>
+                <input type="text" name="q" class="form-control" placeholder="Order #, customer, or product..." value="{{ search_query }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    {% for s in statuses %}<option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2"><button type="submit" class="btn btn-primary w-100">Filter</button></div>
+            <div class="col-md-2"><a href="{% url 'store:admin_orders' %}" class="btn btn-outline-secondary w-100">Clear</a></div>
+        </form>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr><th>Order #</th><th>Customer</th><th>Items</th><th>Total</th><th>Current Location</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td>
+                        <a href="{% url 'store:order_receipt' order.id %}" target="_blank" class="fw-bold">#{{ order.id }}</a>
+                        {% if order.tracking_number %}<br><small class="text-muted">🔍 {{ order.tracking_number }}</small>{% endif %}
+                    </td>
+                    <td>{{ order.user.get_full_name|default:order.user.username }}<br><small class="text-muted">{{ order.user.email }}</small></td>
+                    <td>{{ order.items.count }} item{{ order.items.count|pluralize }}</td>
+                    <td class="fw-bold">GH₵{{ order.total|floatformat:2 }}</td>
+                    <td>
+                        {% if order.delivery_location %}
+                        <span class="badge bg-light text-dark"><i class="bi bi-geo-alt me-1"></i>{{ order.delivery_location }}</span>
+                        {% else %}<span class="text-muted">N/A</span>{% endif %}
+                    </td>
+                    <td>
+                        <form method="post" action="{% url 'store:update_order_status' order.id %}" class="d-inline">
+                            {% csrf_token %}
+                            <select name="status" class="form-select form-select-sm" style="min-width: 140px;" onchange="this.form.submit()">
+                                {% for s in statuses %}<option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                            </select>
+                        </form>
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{% url 'store:track_order' order.id %}" class="btn btn-outline-info" title="Track Order">📍</a>
+                            <a href="{% url 'store:order_receipt' order.id %}" class="btn btn-outline-primary" target="_blank" title="View Receipt">🧾</a>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-center py-4 text-muted">No orders found</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if orders.has_other_pages %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if orders.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page=1{{ request.GET.urlencode|slice:1 }}">First</a></li>
+        <li class="page-item"><a class="page-link" href="?page={{ orders.previous_page_number }}{{ request.GET.urlencode|slice:1 }}">Prev</a></li>
+        {% endif %}
+        <li class="page-item active"><span class="page-link">Page {{ orders.number }} of {{ orders.paginator.num_pages }}</span></li>
+        {% if orders.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ orders.next_page_number }}{{ request.GET.urlencode|slice:1 }}">Next</a></li>
+        <li class="page-item"><a class="page-link" href="?page={{ orders.paginator.num_pages }}{{ request.GET.urlencode|slice:1 }}">Last</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

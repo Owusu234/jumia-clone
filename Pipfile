@@ -1,0 +1,16 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+dj-database-url = "*"
+python-dotenv = "*"
+django-chartjs = "*"
+django-cors-headers = "*"
+supabase = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.13"

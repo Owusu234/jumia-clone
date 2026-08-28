@@ -1,0 +1,209 @@
+{% extends "store/base.html" %}
+{% block title %}Become a Seller | ShopVibe{% endblock %}
+{% block content %}
+<style>
+    .seller-hero { 
+        background: linear-gradient(135deg, var(--p) 0%, #e67e1a 100%); 
+        color: white; 
+        border-radius: 12px; 
+        padding: 30px; 
+        margin-bottom: 24px; 
+    }
+    .form-section { 
+        background: var(--card); 
+        border: 1px solid var(--border); 
+        border-radius: 12px; 
+        padding: 30px; 
+    }
+    /* ✅ NEW: Ensure account fields match your theme */
+    .card input[type="text"],
+    .card input[type="email"],
+    .card input[type="password"],
+    .card input[type="tel"],
+    .card textarea {
+        width: 100%;
+        padding: 0.6rem 0.9rem;
+        font-size: 0.95rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .card input:focus,
+    .card textarea:focus {
+        outline: none;
+        border-color: var(--p);
+        box-shadow: 0 0 0 3px rgba(246, 139, 30, 0.15);
+    }
+    .card label {
+        margin-bottom: 0.3rem;
+    }
+</style>
+
+<div class="container py-4">
+    <div class="seller-hero">
+        <h1 class="fw-bold mb-2">🏪 Start Selling on ShopVibe</h1>
+        <p class="mb-0 opacity-75">Reach thousands of buyers and grow your business.</p>
+    </div>
+
+    <div class="form-section">
+        <h3 class="fw-bold mb-4">📝 Seller Account Setup</h3>
+        <form method="post" novalidate id="seller-form">
+            {% csrf_token %}
+            
+    <!-- ✅ Account Fields with Pre-filled Data & Edit Instructions -->
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
+            <span>🔐 Account Details</span>
+            <small class="text-muted fst-italic">Pre-filled from your registration • Edit if needed</small>
+        </div>
+        <div class="card-body">
+            <!-- USERNAME -->
+            <div class="mb-3">
+                <label for="{{ form.username.id_for_label }}" class="form-label fw-medium">Username *</label>
+                {{ form.username }}
+                <div class="form-text">Your current username. Change if desired.</div>
+                {% if form.username.errors %}<div class="text-danger small mt-1">{{ form.username.errors.0 }}</div>{% endif %}
+            </div>
+
+            <!-- EMAIL -->
+            <div class="mb-3">
+                <label for="{{ form.email.id_for_label }}" class="form-label fw-medium">Email Address *</label>
+                {{ form.email }}
+                <div class="form-text">Your registered email. Update if needed.</div>
+                {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>{% endif %}
+            </div>
+
+            <!-- PASSWORD -->
+            <div class="mb-3">
+                <label for="{{ form.password.id_for_label }}" class="form-label fw-medium">New Password</label>
+                {{ form.password }}
+                <div class="form-text">Leave blank to keep your current password.</div>
+                {% if form.password.errors %}<div class="text-danger small mt-1">{{ form.password.errors.0 }}</div>{% endif %}
+            </div>
+
+            <!-- CONFIRM PASSWORD -->
+            <div class="mb-3">
+                <label for="{{ form.password2.id_for_label }}" class="form-label fw-medium">Confirm New Password</label>
+                {{ form.password2 }}
+                <div class="form-text">Only required if changing password above.</div>
+                {% if form.password2.errors %}<div class="text-danger small mt-1">{{ form.password2.errors.0 }}</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+            <!-- ✅ YOUR EXISTING STORE INFO (100% Preserved) -->
+            <div class="mb-3">
+                <label class="form-label fw-medium">Store Name *</label>
+                {{ form.store_name }}
+                {% if form.store_name.errors %}<div class="text-danger small">{{ form.store_name.errors.0 }}</div>{% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-medium">Store Description *</label>
+                {{ form.description }}
+                {% if form.description.errors %}<div class="text-danger small">{{ form.description.errors.0 }}</div>{% endif %}
+            </div>
+
+            <!-- Phone & WhatsApp -->
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Business Phone *</label>
+                    {{ form.phone }}
+                    {% if form.phone.errors %}<div class="text-danger small">{{ form.phone.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">WhatsApp Number *</label>
+                    <input type="text" class="form-control" value="{{ user.user_profile.whatsapp_number|default:'' }}" disabled>
+                    <div class="form-text">From your registration</div>
+                </div>
+            </div>
+
+            <!-- Country & Region -->
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Country *</label>
+                    <input type="text" name="country" class="form-control" 
+                        placeholder="e.g., Ghana, Nigeria, Kenya" 
+                        value="{{ user.user_profile.country|default:'' }}" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-medium">Region/State *</label>
+                    <input type="text" name="region" class="form-control" 
+                        placeholder="e.g., Greater Accra, Lagos, Nairobi" 
+                        value="{{ form.region.value|default:'' }}" required>
+                    {% if form.region.errors %}<div class="text-danger small mt-1">{{ form.region.errors.0 }}</div>{% endif %}
+                </div>
+            </div>
+
+            <!-- Address & Payment -->
+            <div class="mb-3">
+                <label class="form-label fw-medium">Business Address *</label>
+                {{ form.address }}
+                {% if form.address.errors %}<div class="text-danger small">{{ form.address.errors.0 }}</div>{% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-medium">Payment Number *</label>
+                {{ form.payment_number }}
+                <div class="form-text">Mobile money or bank number for payouts</div>
+                {% if form.payment_number.errors %}<div class="text-danger small">{{ form.payment_number.errors.0 }}</div>{% endif %}
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-100">
+                <i class="bi bi-shop me-2"></i>Create Seller Profile
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ✅ YOUR EXISTING JAVASCRIPT (100% Preserved) -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const countrySelect = document.getElementById('id_country');
+    const paymentInput = document.getElementById('id_payment_number');
+    
+    if (!countrySelect || !paymentInput) return;
+
+    // Auto-format payment number when country changes
+    countrySelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        const phoneCode = selectedOption.dataset.phoneCode || '+233';
+        
+        // Update placeholder
+        paymentInput.placeholder = phoneCode.replace('+', '') + ' XX XXX XXXX';
+        
+        // Auto-format existing value
+        if (paymentInput.value) {
+            formatPaymentNumber(phoneCode);
+        }
+    });
+
+    // Clean input on typing (allow only + and digits)
+    paymentInput.addEventListener('input', function() {
+        let val = this.value.replace(/[^\d+]/g, '');
+        if (val.startsWith('+')) {
+            val = '+' + val.substring(1).replace(/\+/g, '');
+        }
+        this.value = val;
+    });
+
+    // Helper: Format to +CodeNumber
+    function formatPaymentNumber(phoneCode) {
+        let val = paymentInput.value.replace(/[^\d]/g, ''); // Keep only digits
+        if (val.startsWith('0')) {
+            val = val.substring(1); // Remove leading 0
+        }
+        paymentInput.value = phoneCode + val;
+    }
+
+    // Pre-select user's country if exists
+    const userCountryId = "{{ user.user_profile.country.id|default:'' }}";
+    if (userCountryId) {
+        countrySelect.value = userCountryId;
+        countrySelect.dispatchEvent(new Event('change'));
+    }
+});
+</script>
+{% endblock %}

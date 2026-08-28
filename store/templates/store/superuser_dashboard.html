@@ -1,0 +1,9 @@
+{% extends "store/base.html" %}
+{% block content %}
+<h4 class="fw-bold mb-3">Admin</h4>
+<div class="bg-white rounded p-3">
+<table class="table table-sm mb-0"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Action</th></tr></thead><tbody>
+{% for u in users %}<tr><td>{{ u.username }}</td><td>{{ u.email|default:"-" }}</td><td>{% if u.seller_profile %}Seller{% else %}Buyer{% endif %}</td><td><form method="post" action="{% url 'store:delete_user' u.id %}">{% csrf_token %}<button class="btn btn-sm btn-danger">Delete</button></form></td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endblock %}

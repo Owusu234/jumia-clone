@@ -1,0 +1,286 @@
+{% extends "store/base.html" %}
+{% block title %}My Profile | ShopVibe{% endblock %}
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="bg-card rounded border border-theme p-4">
+                <h2 class="fw-bold mb-4">👤 My Profile</h2>
+                
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <!-- Avatar Upload -->
+                   <!-- store/templates/store/profile.html -->
+                    <div class="text-center mb-4">
+                        <div class="position-relative d-inline-block">
+                            <!-- ✅ Uses avatar_url from context -->
+                            <img src="{{ avatar_url }}" id="avatarPreview" 
+                                class="rounded-circle border border-3" 
+                                style="width: 120px; height: 120px; object-fit: cover;" 
+                                alt="Avatar" 
+                                onerror="this.src='https://via.placeholder.com/150?text=No+Avatar'">
+                            
+                            <label for="avatarInput" class="position-absolute bottom-0 end-0 btn btn-sm btn-primary rounded-circle" 
+                                style="width: 32px; height: 32px; cursor: pointer;">
+                                <i class="bi bi-camera" style="font-size: 0.8rem;"></i>
+                            </label>
+                            <input type="file" id="avatarInput" name="avatar" class="d-none" accept="image/*" onchange="previewAvatar(event)">
+                        </div>
+                        <p class="small text-muted mt-2 mb-0">Click the camera icon to upload a new avatar</p>
+                    </div>
+                                        
+                    <!-- WhatsApp Number -->
+                    <div class="mb-3">
+                        <label class="form-label fw-medium">WhatsApp Number</label>
+                        <input type="tel" name="whatsapp_number" class="form-control" 
+                               value="{{ profile.whatsapp_number|default:'' }}" 
+                               placeholder="+233 XX XXX XXXX">
+                        <div class="form-text">Used for order alerts & buyer/seller chat</div>
+                    </div>
+                    
+                    <!-- Add/Replace Country field -->
+                    <div class="mb-3">
+                        <label class="form-label fw-medium">Country</label>
+                        <input type="text" name="country" class="form-control" 
+                            value="{{ profile.country|default:'' }}" 
+                            placeholder="e.g., Ghana, Nigeria, Kenya">
+                    </div>
+
+                    <!-- Bio -->
+                    <div class="mb-3">
+                        <label class="form-label fw-medium">Bio</label>
+                        <textarea name="bio" class="form-control" rows="3" 
+                                  placeholder="Tell us about yourself...">{{ profile.bio|default:'' }}</textarea>
+                    </div>
+                    
+                    <!-- Seller-Only: Payment Number -->
+                    <!-- Seller Settings Section -->
+                    {% if seller %}
+                    <hr class="my-4">
+                    <h5 class="fw-bold mb-3">🏪 Seller Information</h5>
+
+                        {% if seller.status == 'approved' %}
+                        <!-- ✅ APPROVED SELLERS: Show full settings -->
+                        <div class="alert alert-success d-flex align-items-center mb-3">
+                            <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+                            <div>
+                                <strong>Verified Seller</strong>
+                                <div class="small">Your store is active and you can start listing products.</div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3">
+                            <!-- Payment Number (Editable) -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Payment Number *</label>
+                                <input type="tel" name="payment_number" class="form-control" 
+                                    value="{{ seller.payment_number|default:'' }}" 
+                                    placeholder="+233 XX XXX XXXX" required>
+                                <div class="form-text">Mobile money or bank number for receiving payouts</div>
+                            </div>
+
+                            <!-- Store Name (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Store Name</label>
+                                <input type="text" class="form-control" value="{{ seller.store_name }}" disabled>
+                                <div class="form-text">Contact admin to change store name</div>
+                            </div>
+
+                            <!-- Phone (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Business Phone</label>
+                                <input type="tel" class="form-control" value="{{ seller.phone }}" disabled>
+                            </div>
+
+                            <!-- WhatsApp (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">WhatsApp Number</label>
+                                <input type="tel" class="form-control" value="{{ seller.whatsapp|default:'Not set' }}" disabled>
+                            </div>
+
+                            <!-- Address (Read-only) -->
+                            <div class="col-md-12">
+                                <label class="form-label fw-medium">Business Address</label>
+                                <textarea class="form-control" rows="2" disabled>{{ seller.address }}</textarea>
+                            </div>
+
+                            <!-- Region (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Region/State</label>
+                                <input type="text" class="form-control" value="{{ seller.region|default:'Not set' }}" disabled>
+                            </div>
+
+                            <!-- Status (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Verification Status</label>
+                                <input type="text" class="form-control" value="Verified ✓" disabled>
+                            </div>
+                        </div>
+
+                        <!-- Quick Actions for Approved Sellers -->
+                        <div class="mt-4 p-3 bg-light rounded">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>Ready to sell?</strong>
+                                    <div class="small text-muted">Start adding products to your store.</div>
+                                </div>
+                                <a href="{% url 'store:seller_dashboard' %}" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-speedometer2 me-1"></i>Go to Dashboard
+                                </a>
+                            </div>
+                        </div>
+
+                        {% elif seller.status == 'pending' %}
+                        <!-- ⏳ PENDING SELLERS: Show waiting message -->
+                        <div class="alert alert-warning d-flex align-items-center mb-3">
+                            <i class="bi bi-clock-history me-2 fs-5"></i>
+                            <div>
+                                <strong>Application Under Review</strong>
+                                <div class="small">Our team is reviewing your seller application. This usually takes 24-48 hours.</div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3">
+                            <!-- Show basic info (read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Store Name</label>
+                                <input type="text" class="form-control" value="{{ seller.store_name }}" disabled>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Application Date</label>
+                                <input type="text" class="form-control" value="{{ seller.created_at|date:'M d, Y' }}" disabled>
+                            </div>
+
+                            <div class="col-md-12">
+                                <label class="form-label fw-medium">Status</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-warning text-dark">
+                                        <i class="bi bi-hourglass-split me-1"></i>Pending Approval
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-3 alert alert-info small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            <strong>Note:</strong> You'll receive a notification once your application is reviewed. 
+                            In the meantime, you can continue shopping as a buyer.
+                        </div>
+
+                        {% elif seller.status == 'rejected' %}
+                        <!--  REJECTED SELLERS: Show rejection details -->
+                        <div class="alert alert-danger d-flex align-items-center mb-3">
+                            <i class="bi bi-x-circle-fill me-2 fs-5"></i>
+                            <div>
+                                <strong>Application Rejected</strong>
+                                <div class="small">Unfortunately, your seller application was not approved.</div>
+                            </div>
+                        </div>
+
+                        {% if seller.rejected_reason %}
+                        <div class="mb-3 p-3 border border-danger rounded bg-light">
+                            <strong class="text-danger">Reason for Rejection:</strong>
+                            <p class="mb-0 mt-2">{{ seller.rejected_reason }}</p>
+                        </div>
+                        {% endif %}
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Store Name</label>
+                                <input type="text" class="form-control" value="{{ seller.store_name }}" disabled>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Status</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-danger text-white">
+                                        <i class="bi bi-x-octagon me-1"></i>Rejected
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
+                            <p class="small text-muted mb-2">You can:</p>
+                            <ul class="small text-muted">
+                                <li>Contact support if you believe this was a mistake</li>
+                                <li>Update your information and reapply after addressing the issues</li>
+                                <li>Continue using your account as a buyer</li>
+                            </ul>
+                            <a href="{% url 'store:contact_support' %}" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-chat-dots me-1"></i>Contact Support
+                            </a>
+                        </div>
+                        {% endif %}
+
+                    {% else %}
+                    <!--  NOT A SELLER YET: Show CTA -->
+                    <div class="mt-4 p-4 bg-light rounded border">
+                        <div class="text-center">
+                            <i class="bi bi-shop display-4 text-muted mb-3"></i>
+                            <h6 class="fw-bold mb-2">Become a Seller on ShopVibe</h6>
+                            <p class="text-muted small mb-3">
+                                Reach thousands of buyers and grow your business with our powerful seller tools.
+                            </p>
+                            <a href="{% url 'store:seller_signup' %}" class="btn btn-primary">
+                                <i class="bi bi-briefcase me-2"></i>Start Selling Now
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Submit -->
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-save me-2"></i>Save Changes
+                        </button>
+                        <a href="{% url 'store:home' %}" class="btn btn-outline-secondary">
+                            ← Back to Home
+                        </a>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Account Info (Read-Only) -->
+            <div class="bg-card rounded border border-theme p-4 mt-4">
+                <h5 class="fw-bold mb-3">📋 Account Information</h5>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <p class="mb-1"><strong>Username:</strong> {{ user.username }}</p>
+                        <p class="mb-1"><strong>Email:</strong> {{ user.email }}</p>
+                        <p class="mb-0"><strong>Member Since:</strong> {{ user.date_joined|date:"M d, Y" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                      <p class="mb-1"><strong>Account Type:</strong> 
+                            {% if user.is_superuser %}Super Admin
+                            {% elif seller and seller.status == 'approved' %}Seller
+                            {% elif seller and seller.status == 'pending' %}Buyer <small class="text-muted">(Seller application pending)</small>
+                            {% elif seller and seller.status == 'rejected' %}Buyer <small class="text-danger">(Application rejected)</small>
+                            {% else %}Buyer{% endif %}
+                        </p>
+                        {% if seller and seller.status == 'approved' and seller.is_verified %}
+                        <p class="mb-0 text-success"><i class="bi bi-check-circle me-1"></i>Verified Seller</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Preview avatar before upload
+function previewAvatar(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('avatarPreview').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+}
+</script>
+{% endblock %}

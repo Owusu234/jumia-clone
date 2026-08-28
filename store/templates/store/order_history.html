@@ -1,0 +1,73 @@
+{% extends "store/base.html" %}
+{% block title %}Order History | ShopVibe{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2 class="fw-bold mb-0">📦 My Orders</h2>
+    <span class="text-muted">{{ total_orders }} order{{ total_orders|pluralize }}</span>
+</div>
+
+{% if orders %}
+<div class="row g-4">
+    {% for o in orders %}
+    <div class="col-12">
+        <div class="card border-0 shadow-sm overflow-hidden">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <div>
+                    <h5 class="fw-bold mb-1">Order #{{ o.order.id }}</h5>
+                    <small class="text-muted">{{ o.order.created_at|date:"M d, Y • h:i A" }}</small>
+                </div>
+                <div class="text-end">
+                    <span class="badge fs-6 bg-{{ o.order.status|lower|default:'secondary' }}">{{ o.order.status }}</span>
+                    <div class="fw-bold mt-1" style="color:var(--p)">GH₵{{ o.order.total|floatformat:2 }}</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Items Preview -->
+                <div class="d-flex gap-3 mb-3 flex-wrap">
+                    {% for item in o.items %}
+                    <div class="d-flex align-items-center gap-2 bg-light p-2 rounded">
+                        <img src="{{ item.product.get_image }}" style="width:45px;height:45px;object-fit:cover;border-radius:6px">
+                        <div>
+                            <div class="fw-medium small">{{ item.product.name }}</div>
+                            <small class="text-muted">×{{ item.quantity }}</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if o.item_count > 3 %}
+                    <div class="d-flex align-items-center justify-content-center bg-light rounded text-muted small" style="width:45px;height:45px;">+{{ o.item_count|add:"-3" }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Delivery Info -->
+                {% if o.order.estimated_delivery %}
+                <p class="mb-2 small"><i class="bi bi-calendar-check me-1"></i><strong>Est. Delivery:</strong> {{ o.order.estimated_delivery|date:"M d, Y" }}</p>
+                {% endif %}
+                {% if o.order.delivery_location %}
+                <p class="mb-2 small"><i class="bi bi-geo-alt me-1"></i><strong>Current Location:</strong> {{ o.order.delivery_location }}</p>
+                {% endif %}
+
+                <!-- Actions -->
+                <div class="d-flex gap-2 mt-3 flex-wrap">
+                    <a href="{% url 'store:track_order' o.order.id %}" class="btn btn-sm btn-primary"><i class="bi bi-truck me-1"></i> Track Order</a>
+                    <a href="{% url 'store:order_receipt' o.order.id %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-receipt me-1"></i> View Receipt</a>
+                    {% if o.order.can_cancel %}
+                    <form method="post" action="{% url 'store:cancel_order' o.order.id %}" class="d-inline" onsubmit="return confirm('Cancel this order?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i> Cancel</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 bg-white rounded shadow-sm">
+    <i class="bi bi-bag-x display-1 text-muted mb-3 d-block"></i>
+    <h4 class="fw-bold">No orders yet</h4>
+    <p class="text-muted mb-4">Start shopping to see your order history here.</p>
+    <a href="{% url 'store:home' %}" class="btn btn-primary">Start Shopping</a>
+</div>
+{% endif %}
+{% endblock %}
