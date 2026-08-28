@@ -1,8 +1,14 @@
-.env
+# .gitignore
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+.env
 db.sqlite3
-staticfiles/
 media/
-.vscode/
-.DS_Store
+staticfiles/  # ✅ Don't commit staticfiles
