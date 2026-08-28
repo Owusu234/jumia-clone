@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY")
 SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000")
@@ -128,3 +129,10 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "store:home"
 LOGOUT_REDIRECT_URL = "store:home"
+
+# At bottom of settings.py - TEMPORARY DEBUG
+import sys
+print(f"DEBUG: STATIC_ROOT = {STATIC_ROOT}", file=sys.stderr)
+print(f"DEBUG: Exists = {os.path.exists(STATIC_ROOT)}", file=sys.stderr)
+if os.path.exists(STATIC_ROOT):
+    print(f"DEBUG: Contents = {os.listdir(STATIC_ROOT)[:5]}", file=sys.stderr)
