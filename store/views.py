@@ -2472,10 +2472,8 @@ def forgot_password(req):
     return render(req, 'store/forgot_password.html')
 
 def password_reset(req):
-    """Step 2: Page loaded when user clicks email link"""
-    if req.user.is_authenticated:
-        return redirect('store:home')
-    return render(req, 'store/password_reset.html')
+    """Display the password reset page."""
+    return render(req, 'store/reset_password.html')
 
 @require_POST
 def api_reset_password(req):
