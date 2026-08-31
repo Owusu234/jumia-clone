@@ -196,68 +196,70 @@ def register(req):
         return redirect("store:home")
 
     if req.method == "POST":
-        form = CustomUserCreationForm(req.POST)
-        if form.is_valid():
-            # Extract data from form
-            email = form.cleaned_data.get("email")
-            password = form.cleaned_data.get("password")
-            username = form.cleaned_data.get("username", email.split("@")[0])
-            country = form.cleaned_data.get("country")
-            whatsapp = form.cleaned_data.get("whatsapp_number")
+        # ✅ STEP 1: Extract data directly from request (safer than form.cleaned_data if field names mismatch)
+        email = req.POST.get("email", "").strip().lower()
+        password = req.POST.get("password", "")
+        username = req.POST.get("username", email.split("@")[0])
+        country = req.POST.get("country")
+        whatsapp = req.POST.get("whatsapp_number")
 
-            try:
-                # 1️⃣ Initialize Supabase Client
-                supabase = get_supabase_client()
+        # ✅ STEP 2: DEBUG LOG - Check Railway logs to see these values
+        print(f"🔍 DEBUG REGISTRATION: email='{email}', password_len={len(password)}, username='{username}'")
+
+        # ✅ STEP 3: Validate
+        if not email or not password:
+            messages.error(req, "❌ Please provide a valid email and password.")
+            return render(req, "store/register.html")
+
+        try:
+            # Initialize Supabase
+            supabase = get_supabase_client()
+            
+            # ✅ STEP 4: Call Supabase (Using Dictionary Syntax as required by your version)
+            auth_response = supabase.auth.sign_up({
+                "email": email,
+                "password": password
+            })
+
+            # ✅ STEP 5: Check Success
+            # Depending on your supabase version, check if response is valid
+            if auth_response and (hasattr(auth_response, 'user') and auth_response.user):
                 
-                # 2️⃣ Create user in Supabase Auth (USING DICT SYNTAX)
-                # ✅ FIX: Pass credentials as a dictionary, NOT keyword arguments
-                auth_response = supabase.auth.sign_up({
-                    "email": email,
-                    "password": password
-                })
+                # Create local Django user
+                django_user, created = get_or_create_django_user(auth_response.user)
+                django_user.first_name = username.split()[0] if " " in username else username
+                django_user.save()
 
-                # 3️⃣ Check if user was created successfully
-                if auth_response.user:
-                    # Create local Django user to match Supabase user
-                    django_user, created = get_or_create_django_user(auth_response.user)
-                    
-                    # Update username/name locally
-                    django_user.first_name = username.split()[0] if " " in username else username
-                    django_user.save()
+                # Update UserProfile
+                if hasattr(django_user, "user_profile"):
+                    profile = django_user.user_profile
+                    profile.country = country
+                    profile.whatsapp_number = whatsapp
+                    profile.save()
 
-                    # 4️⃣ Update UserProfile
-                    if hasattr(django_user, "user_profile"):
-                        profile = django_user.user_profile
-                        profile.country = country
-                        profile.whatsapp_number = whatsapp
-                        profile.save()
+                    # Sync to Supabase prof table
+                    update_supabase_prof(django_user.id, {
+                        "username": django_user.username,
+                        "email": django_user.email,
+                        "whatsapp_number": whatsapp,
+                        "country_code": country
+                    })
 
-                        # 5️⃣ Sync to Supabase prof table (if you use it)
-                        update_supabase_prof(django_user.id, {
-                            "username": django_user.username,
-                            "email": django_user.email,
-                            "whatsapp_number": whatsapp,
-                            "country_code": country
-                        })
+                messages.success(req, "✅ Account created! Please check your email to confirm.")
+                return redirect("store:login")
+            else:
+                messages.error(req, "❌ Registration failed. No user object returned.")
 
-                    messages.success(req, "✅ Account created! Please check your email to confirm.")
-                    return redirect("store:login")
-                else:
-                    messages.error(req, "❌ Registration failed. Please try again.")
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "duplicate" in err_msg or "already registered" in err_msg:
+                messages.error(req, "⚠️ Email already registered. Please login.")
+            elif "weak password" in err_msg:
+                messages.error(req, "❌ Password is too weak. Use at least 8 characters.")
+            else:
+                messages.error(req, f"❌ Registration failed: {str(e)[:100]}")
 
-            except Exception as e:
-                # Handle errors like "User already registered"
-                err_msg = str(e).lower()
-                if "duplicate" in err_msg or "already registered" in err_msg:
-                    messages.error(req, "⚠️ Email already registered. Please login or reset password.")
-                elif "weak password" in err_msg:
-                    messages.error(req, "❌ Password is too weak. Use at least 8 characters.")
-                else:
-                    messages.error(req, f"❌ Registration failed: {str(e)[:100]}")
-    else:
-        form = CustomUserCreationForm()
-
-    return render(req, "store/register.html", {"form": form})
+    return render(req, "store/register.html")
 
 def login_view(req):
     """Login view with Supabase Auth - Minimal working version"""
