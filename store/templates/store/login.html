@@ -1,57 +1,157 @@
 {% extends "store/base.html" %}
-{% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <div class="bg-white rounded p-4 shadow-sm">
-            <h4 class="text-center fw-bold mb-4" style="color:var(--p)">Welcome Back</h4>
-            
-            <!-- Email/Password Login -->
-            <form method="post" action="{% url 'login' %}">
-                {% csrf_token %}
-                <div class="mb-3">
-                    <label class="form-label small">Email</label>
-                    <input type="email" name="username" class="form-control" placeholder="your@email.com" required>
-                    <small class="text-muted">Use the email you registered with</small>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small">Password</label>
-                    <div class="position-relative">
-                        <input type="password" name="password" id="loginPassword" class="form-control" placeholder="Your password" required>
-                        <button type="button" class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted" 
-                                onclick="togglePassword('loginPassword', this)" style="text-decoration:none;z-index:10">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                    </div>
-                </div>
-                
-                <button type="submit" class="btn btn-primary w-100 mt-2 py-2">Login with Email</button>
-            </form>
-            
-            <p class="text-center mt-3 small">
-                Don't have an account? <a href="{% url 'store:register' %}" class="fw-bold">Register</a>
-            </p>
+{% block title %}Login | ShopVibe{% endblock %}
 
-            <div class="text-center mt-3">
-                <a href="{% url 'store:forgot_password' %}" class="small text-muted">Forgot password?</a>
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow-sm border-0" style="border-radius: 16px; background: var(--card);">
+                <div class="card-body p-4 p-md-5">
+                    
+                    <!-- Header -->
+                    <div class="text-center mb-4">
+                        <h3 class="fw-bold" style="color: var(--p);">Welcome Back 👋</h3>
+                        <p class="text-muted small">Sign in to continue shopping</p>
+                    </div>
+                    
+                    <!-- Display Django Messages -->
+                    {% if messages %}
+                        {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show mb-3" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                    
+                    <!-- Login Form -->
+                    <form method="post" action="{% url 'store:login' %}" class="needs-validation" novalidate>
+                        {% csrf_token %}
+                        
+                        <!-- Email Field -->
+                        <div class="mb-3">
+                            <label for="id_email" class="form-label small fw-semibold">Email Address</label>
+                            <input type="email" 
+                                   class="form-control form-control-lg" 
+                                   id="id_email" 
+                                   name="email" 
+                                   value="{{ email_value|default:'' }}"
+                                   placeholder="you@example.com"
+                                   required
+                                   autocomplete="email"
+                                   pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$">
+                            <div class="invalid-feedback">Please enter a valid email address.</div>
+                            <small class="text-muted">Use the email you registered with</small>
+                        </div>
+                        
+                        <!-- Password Field -->
+                        <div class="mb-3">
+                            <label for="id_password" class="form-label small fw-semibold">Password</label>
+                            <div class="position-relative">
+                                <input type="password" 
+                                       class="form-control form-control-lg" 
+                                       id="id_password" 
+                                       name="password" 
+                                       placeholder="••••••••"
+                                       required
+                                       autocomplete="current-password"
+                                       minlength="8">
+                                <button type="button" 
+                                        class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted p-0" 
+                                        onclick="togglePassword('id_password', this)" 
+                                        style="text-decoration:none; z-index: 10; right: 12px;"
+                                        aria-label="Toggle password visibility">
+                                    <i class="bi bi-eye" id="toggleIcon"></i>
+                                </button>
+                            </div>
+                            <div class="invalid-feedback">Please enter your password.</div>
+                        </div>
+                        
+                        <!-- Remember Me + Forgot Password -->
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="remember" name="remember">
+                                <label class="form-check-label small" for="remember">Remember me</label>
+                            </div>
+                            <a href="{% url 'store:forgot_password' %}" class="small text-decoration-none" style="color: var(--p);">
+                                Forgot password?
+                            </a>
+                        </div>
+                        
+                        <!-- Submit Button -->
+                        <button type="submit" class="btn btn-primary btn-lg w-100 py-3 fw-semibold" style="background: var(--p); border-color: var(--p);">
+                            Sign In
+                        </button>
+                    </form>
+                    
+                    <!-- Divider -->
+                    <div class="text-center my-4">
+                        <hr class="text-muted opacity-25">
+                        <small class="text-muted">or continue with</small>
+                        <hr class="text-muted opacity-25">
+                    </div>
+                    
+                    
+                    <!-- Sign Up Link -->
+                    <p class="text-center mt-4 mb-0 small">
+                        Don't have an account? 
+                        <a href="{% url 'store:register' %}" class="fw-bold text-decoration-none" style="color: var(--p);">
+                            Create one
+                        </a>
+                    </p>
+                    
+                </div>
             </div>
+            
+            <!-- Trust Badges -->
+            <div class="text-center mt-4">
+                <small class="text-muted d-block">
+                    <i class="bi bi-shield-check me-1"></i> Secure login powered by Supabase
+                </small>
+                <small class="text-muted d-block mt-1">
+                    <i class="bi bi-lock me-1"></i> Your data is encrypted and protected
+                </small>
+            </div>
+            
         </div>
     </div>
 </div>
 
+<!-- Password Toggle Script -->
 <script>
 function togglePassword(inputId, btn) {
     const input = document.getElementById(inputId);
     const icon = btn.querySelector('i');
     
+    if (!input || !icon) return;
+    
     if (input.type === 'password') {
         input.type = 'text';
         icon.classList.remove('bi-eye');
         icon.classList.add('bi-eye-slash');
+        btn.setAttribute('aria-label', 'Hide password');
     } else {
         input.type = 'password';
         icon.classList.remove('bi-eye-slash');
         icon.classList.add('bi-eye');
+        btn.setAttribute('aria-label', 'Show password');
     }
 }
+
+// Bootstrap form validation
+(function() {
+    'use strict';
+    const forms = document.querySelectorAll('.needs-validation');
+    
+    Array.from(forms).forEach(function(form) {
+        form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        }, false);
+    });
+})();
 </script>
 {% endblock %}

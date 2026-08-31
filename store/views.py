@@ -221,28 +221,99 @@ def register(req):
     return render(req, "store/register.html", {"form": form})
 
 def login_view(req):
-    if req.user.is_authenticated: return redirect("store:admin_dashboard" if req.user.is_superuser else "store:home")
+    """Login view with Supabase Auth + proper field handling"""
+    
+    # Redirect if already logged in
+    if req.user.is_authenticated:
+        return redirect("store:admin_dashboard" if req.user.is_superuser else "store:home")
+    
     redirect_url = req.build_absolute_uri('/')
+    
     if req.method == "POST":
+        # ✅ FIX: Get 'email' from form, not 'username'
+        email = req.POST.get("email", "").strip().lower()
+        password = req.POST.get("password", "")
+        
+        # Validate input
+        if not email or not password:
+            messages.error(req, "❌ Please enter both email and password.")
+            return render(req, "store/login.html", {
+                "form": CustomAuthenticationForm(),
+                "supabase_url": settings.SUPABASE_URL,
+                "redirect_url": redirect_url
+            })
+        
         supabase = get_supabase_client()
+        
         try:
-            response = supabase.auth.sign_in_with_password({"email": req.POST.get("username"), "password": req.POST.get("password")})
+            # ✅ Sign in with Supabase Auth
+            response = supabase.auth.sign_in_with_password({
+                "email": email,  # ✅ Use 'email', not 'username'
+                "password": password
+            })
+            
+            # Check if authentication succeeded
             if response.user:
+                # Get or create Django user
                 django_user, created = get_or_create_django_user(response.user)
+                
+                # Log into Django session
                 django_login(req, django_user)
-                if response.session: store_supabase_session(req, response.session)
+                
+                # Store Supabase session if available
+                if response.session:
+                    store_supabase_session(req, response.session)
+                
+                # Update profile for new users
                 if created and hasattr(django_user, "user_profile"):
-                    django_user.user_profile.bio = response.user.user_metadata.get("bio", "Shopper"); django_user.user_profile.save()
+                    django_user.user_profile.bio = response.user.user_metadata.get("bio", "Shopper")
+                    django_user.user_profile.save()
+                
+                # Success messages + redirect
                 if django_user.is_superuser:
-                    messages.success(req, f"👋 Welcome back, Admin {django_user.username}!"); return redirect("store:admin_dashboard")
-                messages.success(req, f"👋 Welcome back, {django_user.first_name or django_user.username}!"); return redirect("store:home")
-            messages.error(req, "Invalid credentials.")
+                    messages.success(req, f"👋 Welcome back, Admin {django_user.username}!")
+                    return redirect("store:admin_dashboard")
+                
+                messages.success(req, f"👋 Welcome back, {django_user.first_name or django_user.username}!")
+                return redirect("store:home")
+            else:
+                # No user returned = invalid credentials
+                messages.error(req, "❌ Invalid email or password.")
+                
         except Exception as e:
-            err = str(e).lower()
-            if "invalid login" in err: messages.error(req, "Invalid email or password.")
-            elif "email not confirmed" in err: messages.error(req, "Please confirm your email first.")
-            else: messages.error(req, f"Login failed: {str(e)}")
-    return render(req, "store/login.html", {"form": CustomAuthenticationForm(), "supabase_url": settings.SUPABASE_URL, "redirect_url": redirect_url})
+            # ✅ Better error parsing from Supabase
+            err_msg = str(e).lower()
+            
+            if "invalid login" in err_msg or "invalid credentials" in err_msg:
+                messages.error(req, "❌ Invalid email or password.")
+            elif "email not confirmed" in err_msg:
+                messages.error(req, "⚠️ Please confirm your email address first.")
+            elif "user not found" in err_msg:
+                messages.error(req, "❌ No account found with this email.")
+            elif "wrong password" in err_msg:
+                messages.error(req, "❌ Incorrect password.")
+            else:
+                # Log full error for debugging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Login error: {type(e).__name__} - {str(e)}")
+                messages.error(req, "❌ Login failed. Please try again.")
+        
+        # Re-render form with errors
+        return render(req, "store/login.html", {
+            "form": CustomAuthenticationForm(),
+            "supabase_url": settings.SUPABASE_URL,
+            "redirect_url": redirect_url,
+            "email_value": email  # Pre-fill email field
+        })
+    
+    # GET request - show login form
+    return render(req, "store/login.html", {
+        "form": CustomAuthenticationForm(),
+        "supabase_url": settings.SUPABASE_URL,
+        "redirect_url": redirect_url,
+        "email_value": email, 
+    })
 
 def logout_view(req):
     clear_supabase_session(req); django_logout(req); messages.success(req, "👋 Logged out successfully."); return redirect("store:home")
