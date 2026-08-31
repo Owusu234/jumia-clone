@@ -191,75 +191,34 @@ def superuser_required(view):
 
 # ==================== AUTHENTICATION ====================
 def register(req):
-    """Register user via Supabase Auth + sync to Django DB"""
-    if req.user.is_authenticated:
-        return redirect("store:home")
-
+    if req.user.is_authenticated: return redirect("store:home")
     if req.method == "POST":
-        # ✅ STEP 1: Extract data directly from request (safer than form.cleaned_data if field names mismatch)
-        email = req.POST.get("email", "").strip().lower()
-        password = req.POST.get("password", "")
-        username = req.POST.get("username", email.split("@")[0])
-        country = req.POST.get("country")
-        whatsapp = req.POST.get("whatsapp_number")
-
-        # ✅ STEP 2: DEBUG LOG - Check Railway logs to see these values
-        print(f"🔍 DEBUG REGISTRATION: email='{email}', password_len={len(password)}, username='{username}'")
-
-        # ✅ STEP 3: Validate
-        if not email or not password:
-            messages.error(req, "❌ Please provide a valid email and password.")
-            return render(req, "store/register.html")
-
-        try:
-            # Initialize Supabase
-            supabase = get_supabase_client()
+        form = CustomUserCreationForm(req.POST)
+        if form.is_valid():
+            user = form.save(commit=False)
+            user.save()
             
-            # ✅ STEP 4: Call Supabase (Using Dictionary Syntax as required by your version)
-            auth_response = supabase.auth.sign_up({
-                "email": email,
-                "password": password
-            })
-
-            # ✅ STEP 5: Check Success
-            # Depending on your supabase version, check if response is valid
-            if auth_response and (hasattr(auth_response, 'user') and auth_response.user):
+            # Save country to UserProfile
+            if hasattr(user, "user_profile"):
+                user.user_profile.country = form.cleaned_data.get("country")
+                user.user_profile.whatsapp_number = form.cleaned_data.get("whatsapp_number")
+                user.user_profile.save()
                 
-                # Create local Django user
-                django_user, created = get_or_create_django_user(auth_response.user)
-                django_user.first_name = username.split()[0] if " " in username else username
-                django_user.save()
-
-                # Update UserProfile
-                if hasattr(django_user, "user_profile"):
-                    profile = django_user.user_profile
-                    profile.country = country
-                    profile.whatsapp_number = whatsapp
-                    profile.save()
-
-                    # Sync to Supabase prof table
-                    update_supabase_prof(django_user.id, {
-                        "username": django_user.username,
-                        "email": django_user.email,
-                        "whatsapp_number": whatsapp,
-                        "country_code": country
-                    })
-
-                messages.success(req, "✅ Account created! Please check your email to confirm.")
-                return redirect("store:login")
-            else:
-                messages.error(req, "❌ Registration failed. No user object returned.")
-
-        except Exception as e:
-            err_msg = str(e).lower()
-            if "duplicate" in err_msg or "already registered" in err_msg:
-                messages.error(req, "⚠️ Email already registered. Please login.")
-            elif "weak password" in err_msg:
-                messages.error(req, "❌ Password is too weak. Use at least 8 characters.")
-            else:
-                messages.error(req, f"❌ Registration failed: {str(e)[:100]}")
-
-    return render(req, "store/register.html")
+                # Sync to Supabase prof table
+                update_supabase_prof(user.id, {
+                    "username": user.username,
+                    "email": user.email,
+                    "whatsapp_number": form.cleaned_data.get("whatsapp_number"),
+                    "country_code": form.cleaned_data.get("country") if form.cleaned_data.get("country") else None
+                })
+            
+            # Auto-login
+            django_login(req, user)
+            messages.success(req, "🎉 Account created! Welcome to ShopVibe.")
+            return redirect("store:home")
+    else:
+        form = CustomUserCreationForm()
+    return render(req, "store/register.html", {"form": form})
 
 def login_view(req):
     """Login view with Supabase Auth - Minimal working version"""
