@@ -48,7 +48,7 @@ urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
     path('password/forgot/', views.forgot_password, name='forgot_password'),
-    path('password/reset/', views.password_reset, name='password_reset'),
+    path('reset-password/', views.reset_password_view, name='reset_password'),
     path('api/reset-password/', views.api_reset_password, name='api_reset_password'),
 
     # ==================== SELLER PORTAL ====================

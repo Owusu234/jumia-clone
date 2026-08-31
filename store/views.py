@@ -2445,24 +2445,34 @@ def analytics_api(req):
     })
 
 
+from django.urls import reverse  # ✅ Ensure this is imported at the top of views.py
+
 def forgot_password(req):
     """Step 1: Send password reset email via Supabase"""
     if req.user.is_authenticated:
         return redirect('store:home')
         
     if req.method == 'POST':
-        email = req.POST.get('email', '').strip()
+        email = req.POST.get('email', '').strip().lower()
         if not email:
             messages.error(req, "Please enter your email address.")
         else:
             try:
                 supabase = get_supabase_client()
+                
+                # ✅ Build the EXACT URL where your reset view lives
                 redirect_url = req.build_absolute_uri(reverse('store:password_reset')).rstrip('/')
                 
-                # ✅ Python SDK uses snake_case + options dict
-                supabase.auth.reset_password_for_email(email, options={"redirectTo": redirect_url})
+                # 🔍 DEBUG: Check Railway logs to verify the URL being sent
+                print(f"🔗 Sending reset link to: {redirect_url}")
                 
-                messages.success(req, f"✅ Reset link sent to {email}. Check your inbox (and spam folder).")
+                # ✅ FIX: Use "redirect_to" (snake_case) to match Supabase Python SDK v1.x/v2.x
+                supabase.auth.reset_password_for_email(
+                    email, 
+                    options={"redirect_to": redirect_url}
+                )
+                
+                messages.success(req, f"✅ Reset link sent to {email}. Check your inbox (and spam).")
                 return redirect('store:login')
                 
             except Exception as e:
@@ -2471,11 +2481,51 @@ def forgot_password(req):
                 
     return render(req, 'store/forgot_password.html')
 
-def password_reset(req):
-    """Step 2: Page loaded when user clicks email link"""
-    if req.user.is_authenticated:
-        return redirect('store:home')
-    return render(req, 'store/password_reset.html')
+def reset_password_view(req):
+    """Handle Supabase password reset flow"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Get token from URL (Supabase passes it as ?token= or ?token_hash=)
+    token = req.GET.get("token") or req.GET.get("token_hash")
+    
+    if not token:
+        messages.error(req, "❌ Invalid or expired reset link.")
+        return redirect("store:login")
+    
+    if req.method == "POST":
+        new_password = req.POST.get("new_password", "")
+        confirm_password = req.POST.get("confirm_password", "")
+        
+        # Validate
+        if not new_password or not confirm_password:
+            messages.error(req, "❌ Please fill in both fields.")
+        elif new_password != confirm_password:
+            messages.error(req, "❌ Passwords do not match.")
+        elif len(new_password) < 8:
+            messages.error(req, "❌ Password must be at least 8 characters.")
+        else:
+            try:
+                supabase = get_supabase_client()
+                
+                # 1️⃣ Verify recovery token
+                supabase.auth.verify_otp(token=token, type="recovery")
+                
+                # 2️ Update password
+                supabase.auth.update_user({"password": new_password})
+                
+                messages.success(req, "✅ Password reset successful! You can now log in.")
+                return redirect("store:login")
+                
+            except Exception as e:
+                logger.error(f"Password reset error: {e}")
+                err_msg = str(e).lower()
+                if "expired" in err_msg or "invalid" in err_msg:
+                    messages.error(req, " Reset link expired. Please request a new one.")
+                else:
+                    messages.error(req, f"❌ Reset failed: {str(e)[:100]}")
+    
+    return render(req, "store/reset_password.html", {"token": token})
 
 @require_POST
 def api_reset_password(req):
