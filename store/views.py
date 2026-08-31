@@ -191,34 +191,126 @@ def superuser_required(view):
 
 # ==================== AUTHENTICATION ====================
 def register(req):
-    if req.user.is_authenticated: return redirect("store:home")
+    if req.user.is_authenticated:
+        return redirect("store:home")
+
     if req.method == "POST":
         form = CustomUserCreationForm(req.POST)
+
         if form.is_valid():
-            user = form.save(commit=False)
-            user.save()
-            
-            # Save country to UserProfile
-            if hasattr(user, "user_profile"):
-                user.user_profile.country = form.cleaned_data.get("country")
-                user.user_profile.whatsapp_number = form.cleaned_data.get("whatsapp_number")
-                user.user_profile.save()
-                
-                # Sync to Supabase prof table
-                update_supabase_prof(user.id, {
-                    "username": user.username,
-                    "email": user.email,
-                    "whatsapp_number": form.cleaned_data.get("whatsapp_number"),
-                    "country_code": form.cleaned_data.get("country") if form.cleaned_data.get("country") else None
+            supabase = get_supabase_client()
+
+            email = form.cleaned_data["email"].strip().lower()
+            password = form.cleaned_data["password1"]
+            username = form.cleaned_data["username"]
+            first_name = form.cleaned_data.get("first_name", "")
+            last_name = form.cleaned_data.get("last_name", "")
+            whatsapp = form.cleaned_data.get("whatsapp_number", "")
+            country = form.cleaned_data.get("country")
+
+            try:
+                # ==================================================
+                # 1. CREATE USER IN SUPABASE AUTH
+                # ==================================================
+                supabase_response = supabase.auth.sign_up({
+                    "email": email,
+                    "password": password,
+                    "options": {
+                        "data": {
+                            "username": username,
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "whatsapp_number": whatsapp,
+                            "country": country,
+                        }
+                    }
                 })
-            
-            # Auto-login
-            django_login(req, user)
-            messages.success(req, "🎉 Account created! Welcome to ShopVibe.")
-            return redirect("store:home")
+
+                supabase_user = supabase_response.user
+
+                if not supabase_user:
+                    messages.error(
+                        req,
+                        "❌ Could not create Supabase account."
+                    )
+                    return render(
+                        req,
+                        "store/register.html",
+                        {"form": form}
+                    )
+
+                # ==================================================
+                # 2. CREATE DJANGO USER
+                # ==================================================
+                user = form.save(commit=False)
+
+                # The password is already hashed by UserCreationForm
+                user.save()
+
+                # ==================================================
+                # 3. SAVE DJANGO USER PROFILE
+                # ==================================================
+                if hasattr(user, "user_profile"):
+                    user.user_profile.country = country
+                    user.user_profile.whatsapp_number = whatsapp
+                    user.user_profile.save()
+
+                # ==================================================
+                # 4. CREATE/UPDATE SUPABASE PROFILE
+                # ==================================================
+                try:
+                    supabase.table("prof").upsert({
+                        "id": str(supabase_user.id),
+                        "username": username,
+                        "email": email,
+                        "whatsapp_number": whatsapp,
+                        "country_code": country if country else None,
+                    }).execute()
+
+                except Exception as profile_error:
+                    print(
+                        "⚠️ Supabase profile sync failed:",
+                        profile_error
+                    )
+
+                # ==================================================
+                # 5. AUTO LOGIN
+                # ==================================================
+                django_login(req, user)
+
+                # Store Supabase session if available
+                if supabase_response.session:
+                    store_supabase_session(
+                        req,
+                        supabase_response.session
+                    )
+
+                messages.success(
+                    req,
+                    "🎉 Account created! Welcome to ShopVibe."
+                )
+
+                return redirect("store:home")
+
+            except Exception as e:
+                print(
+                    f"🔴 REGISTRATION ERROR: "
+                    f"{type(e).__name__}: {str(e)}"
+                )
+
+                messages.error(
+                    req,
+                    f"❌ Registration failed: {str(e)}"
+                )
+
     else:
         form = CustomUserCreationForm()
-    return render(req, "store/register.html", {"form": form})
+
+    return render(
+        req,
+        "store/register.html",
+        {"form": form}
+    )
 
 def login_view(req):
     """Login view with Supabase Auth - Minimal working version"""
