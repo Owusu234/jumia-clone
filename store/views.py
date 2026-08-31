@@ -209,21 +209,14 @@ def register(req):
                 # 1️⃣ Initialize Supabase Client
                 supabase = get_supabase_client()
                 
-                # 2️ Create user in Supabase Auth (USING KEYWORDS, NOT DICT)
-                # ✅ THIS IS THE FIX
-                auth_response = supabase.auth.sign_up(
-                    email=email,
-                    password=password,
-                    options={
-                        "data": {
-                            "username": username,
-                            "whatsapp_number": whatsapp,
-                            "country_code": country
-                        }
-                    }
-                )
+                # 2️⃣ Create user in Supabase Auth (USING DICT SYNTAX)
+                # ✅ FIX: Pass credentials as a dictionary, NOT keyword arguments
+                auth_response = supabase.auth.sign_up({
+                    "email": email,
+                    "password": password
+                })
 
-                # 3️ Check if user was created
+                # 3️⃣ Check if user was created successfully
                 if auth_response.user:
                     # Create local Django user to match Supabase user
                     django_user, created = get_or_create_django_user(auth_response.user)
@@ -239,7 +232,7 @@ def register(req):
                         profile.whatsapp_number = whatsapp
                         profile.save()
 
-                        # 5️ Sync to Supabase prof table (if you use it)
+                        # 5️⃣ Sync to Supabase prof table (if you use it)
                         update_supabase_prof(django_user.id, {
                             "username": django_user.username,
                             "email": django_user.email,
@@ -256,7 +249,7 @@ def register(req):
                 # Handle errors like "User already registered"
                 err_msg = str(e).lower()
                 if "duplicate" in err_msg or "already registered" in err_msg:
-                    messages.error(req, "️ Email already registered. Please login or reset password.")
+                    messages.error(req, "⚠️ Email already registered. Please login or reset password.")
                 elif "weak password" in err_msg:
                     messages.error(req, "❌ Password is too weak. Use at least 8 characters.")
                 else:
