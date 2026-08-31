@@ -198,6 +198,7 @@ def register(req):
     if req.method == "POST":
         form = CustomUserCreationForm(req.POST)
         if form.is_valid():
+            # Extract data from form
             email = form.cleaned_data.get("email")
             password = form.cleaned_data.get("password")
             username = form.cleaned_data.get("username", email.split("@")[0])
@@ -205,34 +206,40 @@ def register(req):
             whatsapp = form.cleaned_data.get("whatsapp_number")
 
             try:
-                # 1️⃣ Create user in Supabase Auth FIRST
+                # 1️⃣ Initialize Supabase Client
                 supabase = get_supabase_client()
-                auth_response = supabase.auth.sign_up({
-                    "email": email,
-                    "password": password,
-                    "options": {
+                
+                # 2️ Create user in Supabase Auth (USING KEYWORDS, NOT DICT)
+                # ✅ THIS IS THE FIX
+                auth_response = supabase.auth.sign_up(
+                    email=email,
+                    password=password,
+                    options={
                         "data": {
                             "username": username,
                             "whatsapp_number": whatsapp,
                             "country_code": country
                         }
                     }
-                })
+                )
 
+                # 3️ Check if user was created
                 if auth_response.user:
-                    # 2️ Create local Django user to match Supabase user
+                    # Create local Django user to match Supabase user
                     django_user, created = get_or_create_django_user(auth_response.user)
+                    
+                    # Update username/name locally
                     django_user.first_name = username.split()[0] if " " in username else username
                     django_user.save()
 
-                    # 3️⃣ Update UserProfile
+                    # 4️⃣ Update UserProfile
                     if hasattr(django_user, "user_profile"):
                         profile = django_user.user_profile
                         profile.country = country
                         profile.whatsapp_number = whatsapp
                         profile.save()
 
-                        # 4️⃣ Sync to Supabase prof table (if you still use it)
+                        # 5️ Sync to Supabase prof table (if you use it)
                         update_supabase_prof(django_user.id, {
                             "username": django_user.username,
                             "email": django_user.email,
@@ -240,13 +247,13 @@ def register(req):
                             "country_code": country
                         })
 
-                    # 5️⃣ Redirect to login (Supabase requires email confirmation by default)
                     messages.success(req, "✅ Account created! Please check your email to confirm.")
                     return redirect("store:login")
                 else:
                     messages.error(req, "❌ Registration failed. Please try again.")
 
             except Exception as e:
+                # Handle errors like "User already registered"
                 err_msg = str(e).lower()
                 if "duplicate" in err_msg or "already registered" in err_msg:
                     messages.error(req, "️ Email already registered. Please login or reset password.")
@@ -258,6 +265,7 @@ def register(req):
         form = CustomUserCreationForm()
 
     return render(req, "store/register.html", {"form": form})
+
 def login_view(req):
     """Login view with Supabase Auth - Minimal working version"""
     import logging
