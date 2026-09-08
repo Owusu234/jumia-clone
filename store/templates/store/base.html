@@ -552,37 +552,6 @@
                         {{ cart_count|default:"0" }}
                     </span>
                 </a>
-
-                {% if user.is_authenticated and user.is_staff %}
-                <div class="position-relative me-3">
-                    <button class="btn btn-link text-dark position-relative border-0 p-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Admin Alerts">
-                        <i class="bi bi-bell fs-5"></i>
-                        {% if admin_notification_count > 0 %}
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem; min-width: 18px; height: 18px; padding: 3px;">
-                            {{ admin_notification_count }}
-                        </span>
-                        {% endif %}
-                    </button>
-                    
-                    <ul class="dropdown-menu dropdown-menu-end shadow" style="min-width: 320px; max-height: 400px; overflow-y: auto;">
-                        {% if admin_notifications %}
-                            {% for notif in admin_notifications %}
-                            <li>
-                                <a class="dropdown-item py-2 {% if not notif.is_read %}bg-light{% endif %}" href="{{ notif.link }}">
-                                    <div class="fw-semibold small">{{ notif.title }}</div>
-                                    <div class="text-muted small text-truncate">{{ notif.message }}</div>
-                                    <div class="text-end mt-1"><small class="text-muted">{{ notif.created_at|timesince }} ago</small></div>
-                                </a>
-                            </li>
-                            {% endfor %}
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-center text-primary small fw-bold" href="{% url 'store:mark_notifications_read' %}">✅ Mark all as read</a></li>
-                        {% else %}
-                            <li><span class="dropdown-item text-muted text-center small py-3">No new notifications</span></li>
-                        {% endif %}
-                    </ul>
-                </div>
-                {% endif %}
                 
                 <!-- Auth Links -->
                 <!-- store/templates/store/base.html - Navbar Auth Section -->
@@ -779,5 +748,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
     {% block extra_js %}{% endblock %}
+       <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}">
+   <script src="{% static 'store/chatbot-widget.js' %}"></script>
 </body>
 </html>
