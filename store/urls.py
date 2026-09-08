@@ -11,7 +11,6 @@ urlpatterns = [
     path("product/<slug:slug>/", views.product_detail, name="product_detail"),
     # path("complete-profile/", views.complete_profile, name="complete_profile"),
     path("api/regions/", views.get_regions_by_country, name="api_regions"),
-    path("api/chatbot/recommend/", views.chatbot_recommend, name="chatbot_recommend"),
     path('admin/notifications/read/', views.mark_notifications_read, name='mark_notifications_read'),
    
     # ==================== CART (UUID Compatible) ====================

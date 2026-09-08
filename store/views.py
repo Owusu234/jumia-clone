@@ -3,7 +3,6 @@
 import logging
 import uuid
 import json
-import os
 import requests
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
@@ -33,11 +32,6 @@ from django.contrib.auth import login
 
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
-
-# ==================== AI CHATBOT (OpenRouter) ====================
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.ai/models
 
 from .models import Product, Category, Cart, CartItem, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
@@ -466,103 +460,6 @@ def home(req):
         }
     })
 
-@require_POST
-def chatbot_recommend(req):
-    """
-    AI shopping-assistant endpoint. Takes a free-text description of what
-    the customer wants and returns a short reply + matching products,
-    picked only from real catalog data (never invented by the model).
-    """
-    try:
-        body = json.loads(req.body.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({"error": "Invalid request body"}, status=400)
-
-    user_message = (body.get("message") or "").strip()
-    history = body.get("history") or []
-
-    if not user_message:
-        return JsonResponse({"error": "message is required"}, status=400)
-
-    if not OPENROUTER_API_KEY:
-        return JsonResponse({"error": "Server not configured (missing OPENROUTER_API_KEY)"}, status=500)
-
-    # Same base queryset convention as home() — active, in-stock products only
-    prods = Product.objects.filter(is_active=True, stock__gt=0)[:200]
-
-    catalog_lines = []
-    id_to_product = {}
-    for p in prods:
-        id_to_product[p.id] = p
-        catalog_lines.append(
-            f"id={p.id} | {p.name} | category={p.category.name} "
-            f"| price=GH₵{p.price} | stock={p.stock} | {p.description[:120]}"
-        )
-    catalog_text = "\n".join(catalog_lines)
-
-    system_prompt = f"""You are a friendly shopping assistant for ShopVibe,
-an online marketplace. A customer will describe what they're looking for.
-Recommend ONLY items from the catalog below — never invent products or IDs.
-
-CATALOG:
-{catalog_text}
-
-Respond with STRICT JSON only, no markdown, no extra text, in this exact shape:
-{{
-  "reply": "a short, friendly, 1-3 sentence response to the customer",
-  "product_ids": [list of matching product ids from the catalog, empty if none fit]
-}}
-Pick at most 5 product_ids, ranked best match first."""
-
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history[-6:])
-    messages.append({"role": "user", "content": user_message})
-
-    try:
-        ai_resp = requests.post(
-            OPENROUTER_URL,
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://shopvibe.up.railway.app/",
-                "X-Title": "ShopVibe Chatbot",
-            },
-            json={
-                "model": OPENROUTER_MODEL,
-                "messages": messages,
-                "temperature": 0.4,
-                "max_tokens": 400,
-            },
-            timeout=20,
-        )
-        ai_resp.raise_for_status()
-        raw_content = ai_resp.json()["choices"][0]["message"]["content"]
-    except requests.RequestException as e:
-        return JsonResponse({"error": f"AI service error: {e}"}, status=502)
-
-    cleaned = raw_content.strip().strip("`").replace("json\n", "", 1).strip()
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        return JsonResponse({"reply": raw_content, "products": []})
-
-    reply_text = parsed.get("reply", "")
-    product_ids = parsed.get("product_ids", []) or []
-
-    matched = [id_to_product[pid] for pid in product_ids if pid in id_to_product]
-    products_json = [
-        {
-            "id": p.id,
-            "name": p.name,
-            "price": str(p.price),
-            "image_url": p.get_image(),
-            "slug": p.slug,
-        }
-        for p in matched
-    ]
-
-    return JsonResponse({"reply": reply_text, "products": products_json})
-
 @login_required
 def product_detail(req, slug):
     product = get_object_or_404(Product, slug=slug, is_active=True)
@@ -628,97 +525,6 @@ def submit_review(req, product_id):
     return redirect("store:product_detail", slug=product.slug)
 
 # ==================== CART & CHECKOUT ====================
-
-# --- Smart Cart Optimization (rule-based, no ML / no external AI calls) ---
-
-_SMART_CART_STOPWORDS = {
-    'the', 'and', 'for', 'with', 'a', 'an', 'of', 'in', 'on', 'to', 'by'
-}
-
-
-def find_smart_cart_alternative(product):
-    """
-    Find a single cheaper, reasonably similar, in-stock alternative for a
-    cart product using simple Django ORM filtering + keyword overlap.
-
-    Rules (see handoff doc section 6/24):
-      - same category
-      - price < current product price
-      - stock > 0, is_active
-      - not the same product
-      - name must share at least one meaningful keyword with the current
-        product (prevents unrelated-but-cheaper suggestions)
-
-    Returns the best-matching Product, or None if nothing suitable exists.
-    """
-    if not product.category_id:
-        return None
-
-    candidates = (
-        Product.objects.filter(
-            category_id=product.category_id,
-            is_active=True,
-            stock__gt=0,
-            price__lt=product.price,
-        )
-        .exclude(id=product.id)
-        .order_by('price')[:50]  # cap scan size; cheapest-first is a reasonable bound
-    )
-
-    keywords = [
-        w for w in re.findall(r'[A-Za-z0-9]+', product.name.lower())
-        if len(w) > 2 and w not in _SMART_CART_STOPWORDS
-    ]
-    if not keywords:
-        return None
-
-    best_candidate = None
-    best_score = -1
-
-    for cand in candidates:
-        cand_words = set(re.findall(r'[A-Za-z0-9]+', cand.name.lower()))
-        overlap = sum(1 for kw in keywords if kw in cand_words)
-
-        if overlap == 0:
-            continue  # not similar enough — avoid unrelated "cheaper" suggestions
-
-        price_saving = float(product.price - cand.price)
-        score = (overlap * 1000) + price_saving  # name similarity dominates, price breaks ties
-
-        if score > best_score:
-            best_score = score
-            best_candidate = cand
-
-    return best_candidate
-
-
-def build_smart_cart_suggestions(cart_items):
-    """
-    Given the cart_items list already built by the cart view
-    (each: {'product', 'quantity', 'color_variant', 'total_price'}),
-    return at most one savings suggestion per item.
-    """
-    suggestions = []
-    for entry in cart_items:
-        product = entry['product']
-        quantity = entry['quantity']
-
-        alternative = find_smart_cart_alternative(product)
-        if not alternative:
-            continue
-
-        saving_per_item = product.price - alternative.price
-        total_saving = saving_per_item * quantity
-
-        suggestions.append({
-            'current_product': product,
-            'alternative': alternative,
-            'saving_per_item': saving_per_item,
-            'total_saving': total_saving,
-        })
-
-    return suggestions
-
 
 def add_to_cart(req, product_id):
     if req.method == 'GET':
@@ -829,15 +635,10 @@ def cart(req):
         req.session['cart'] = clean_cart
         req.session.modified = True
 
-    # Smart Cart Optimization: cheaper, similar in-stock alternatives.
-    # Read-only suggestions — never touches the cart or checkout totals.
-    smart_cart_suggestions = build_smart_cart_suggestions(cart_items)
-
     return render(req, 'store/cart.html', {
         'cart_items': cart_items,
         'cart_total': cart_total,
         'cart_count': cart_count,
-        'smart_cart_suggestions': smart_cart_suggestions,
     })
 
 @login_required
@@ -1859,8 +1660,7 @@ def fix_glb_diffuse_factors(glb_bytes):
     except Exception:
         return glb_bytes  # always safe
 
-@login_required
-@seller_required
+
 def upload_product(req):
     """Handle product upload with single category selection"""
     if req.method == "POST":
