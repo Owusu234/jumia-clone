@@ -1859,7 +1859,7 @@ def fix_glb_diffuse_factors(glb_bytes):
     except Exception:
         return glb_bytes  # always safe
 
-
+@login_required
 def upload_product(req):
     """Handle product upload with single category selection"""
     if req.method == "POST":
