@@ -339,7 +339,7 @@ def home(req):
     price_max = req.GET.get("price_max")
     sort = req.GET.get("sort", "newest")
     categories = Category.objects.all().order_by('name')
-    prods = Product.objects.filter(is_active=True, stock__gt=0)
+    prods = Product.objects.filter(is_active=True).filter(Q(stock__gt=0) | Q(requires_size=True))
     if q:
         prods = prods.filter(Q(name__icontains=q) | Q(description__icontains=q) | Q(category__name__icontains=q))
     if cat_slug:
