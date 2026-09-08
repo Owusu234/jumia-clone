@@ -1,8 +1,10 @@
 
 # store/views.py
+import logging
 import uuid
 import json
 import os
+import requests
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required,user_passes_test
@@ -15,21 +17,19 @@ from django.contrib.auth import login as django_login, logout as django_logout
 from django.conf import settings
 from django.urls import reverse
 from django.http import HttpResponse
-from django.http import JsonResponse
 from django.template.loader import render_to_string
 from supabase import create_client
 from paystackapi.paystack import Paystack
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-import requests
 from datetime import datetime, timedelta
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models.functions import TruncDay,TruncHour
 from datetime import timezone as dt_timezone
-
+from django.views.decorators.http import require_POST
 from django.db import transaction
 from django.contrib.auth import login
+
 
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
@@ -44,7 +44,9 @@ from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignu
 from django.http import JsonResponse
 import re
 from django.core.paginator import Paginator
-
+# import logging
+from .models import AdminNotification
+from .decorators import seller_approved_required
 # ==================== SUPABASE CLIENT & HELPERS ====================
 
 def get_supabase_client():
@@ -77,17 +79,16 @@ def upload_avatar_to_supabase(user_id, avatar_file):
         
         # Generate unique filename
         ext = os.path.splitext(avatar_file.name)[1].lower()
+        # Using 'avatars/' as a folder inside the bucket is fine
         filename = f"avatars/{user_id}_{uuid.uuid4().hex}{ext}"
         
-        # Upload to Supabase Storage bucket 'avatars'
-        supabase.storage.from_("avatars").upload(
+        supabase.storage.from_("profile_pictures").upload(
             filename, 
             avatar_file.read(), 
             {"content-type": avatar_file.content_type, "cache-control": "3600"}
         )
         
-        # Get public URL
-        public_url = supabase.storage.from_("avatars").get_public_url(filename)
+        public_url = supabase.storage.from_("profile_pictures").get_public_url(filename)
         return public_url
     except Exception as e:
         print(f"⚠️ Avatar upload failed: {e}")
@@ -130,6 +131,12 @@ def update_supabase_prof(user_id, data):
     supabase = get_supabase_client()
     try: supabase.table("prof").update(data).eq("id", str(user_id)).execute(); return True
     except Exception: return False
+
+@login_required
+@seller_approved_required
+def seller_dashboard(request):
+    return render(request, 'store/seller_dashboard.html')
+
 
 def get_cart_data(req):
     if not req.user.is_authenticated: return {"items": [], "total": 0, "count": 0, "cart_id": None}
@@ -190,58 +197,197 @@ def superuser_required(view):
 
 # ==================== AUTHENTICATION ====================
 def register(req):
-    if req.user.is_authenticated: return redirect("store:home")
+    if req.user.is_authenticated:
+        return redirect("store:home")
+
     if req.method == "POST":
         form = CustomUserCreationForm(req.POST)
+
         if form.is_valid():
-            user = form.save(commit=False)
-            user.save()
-            
-            # Save country to UserProfile
-            if hasattr(user, "user_profile"):
-                user.user_profile.country = form.cleaned_data.get("country")
-                user.user_profile.whatsapp_number = form.cleaned_data.get("whatsapp_number")
-                user.user_profile.save()
-                
-                # Sync to Supabase prof table
-                update_supabase_prof(user.id, {
-                    "username": user.username,
-                    "email": user.email,
-                    "whatsapp_number": form.cleaned_data.get("whatsapp_number"),
-                    "country_code": form.cleaned_data.get("country") if form.cleaned_data.get("country") else None
+            supabase = get_supabase_client()
+
+            email = form.cleaned_data["email"].strip().lower()
+            password = form.cleaned_data["password1"]
+            username = form.cleaned_data["username"]
+            first_name = form.cleaned_data.get("first_name", "")
+            last_name = form.cleaned_data.get("last_name", "")
+            whatsapp = form.cleaned_data.get("whatsapp_number", "")
+            country = form.cleaned_data.get("country")
+
+            try:
+                # ==================================================
+                # 1. CREATE USER IN SUPABASE AUTH
+                # ==================================================
+                supabase_response = supabase.auth.sign_up({
+                    "email": email,
+                    "password": password,
+                    "options": {
+                        "data": {
+                            "username": username,
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "whatsapp_number": whatsapp,
+                            "country": country,
+                        }
+                    }
                 })
-            
-            # Auto-login
-            django_login(req, user)
-            messages.success(req, "🎉 Account created! Welcome to ShopVibe.")
-            return redirect("store:home")
+
+                supabase_user = supabase_response.user
+
+                if not supabase_user:
+                    messages.error(
+                        req,
+                        "❌ Could not create Supabase account."
+                    )
+                    return render(
+                        req,
+                        "store/register.html",
+                        {"form": form}
+                    )
+
+                # ==================================================
+                # 2. CREATE DJANGO USER
+                # ==================================================
+                user = form.save(commit=False)
+
+                # The password is already hashed by UserCreationForm
+                user.save()
+
+                # ==================================================
+                # 3. SAVE DJANGO USER PROFILE
+                # ==================================================
+                if hasattr(user, "user_profile"):
+                    user.user_profile.country = country
+                    user.user_profile.whatsapp_number = whatsapp
+                    user.user_profile.save()
+
+                # ==================================================
+                # 4. CREATE/UPDATE SUPABASE PROFILE
+                # ==================================================
+                try:
+                    supabase.table("prof").upsert({
+                        "id": str(supabase_user.id),
+                        "username": username,
+                        "email": email,
+                        "whatsapp_number": whatsapp,
+                        "country_code": country if country else None,
+                    }).execute()
+
+                except Exception as profile_error:
+                    print(
+                        "⚠️ Supabase profile sync failed:",
+                        profile_error
+                    )
+
+                # ==================================================
+                # 5. AUTO LOGIN
+                # ==================================================
+                django_login(req, user)
+
+                # Store Supabase session if available
+                if supabase_response.session:
+                    store_supabase_session(
+                        req,
+                        supabase_response.session
+                    )
+
+                messages.success(
+                    req,
+                    "🎉 Account created! Welcome to ShopVibe."
+                )
+
+                return redirect("store:home")
+
+            except Exception as e:
+                print(
+                    f"🔴 REGISTRATION ERROR: "
+                    f"{type(e).__name__}: {str(e)}"
+                )
+
+                messages.error(
+                    req,
+                    f"❌ Registration failed: {str(e)}"
+                )
+
     else:
         form = CustomUserCreationForm()
-    return render(req, "store/register.html", {"form": form})
+
+    return render(
+        req,
+        "store/register.html",
+        {"form": form}
+    )
 
 def login_view(req):
-    if req.user.is_authenticated: return redirect("store:admin_dashboard" if req.user.is_superuser else "store:home")
-    redirect_url = req.build_absolute_uri('/')
+    """Login view with Supabase Auth - Minimal working version"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Redirect if already logged in
+    if req.user.is_authenticated:
+        return redirect("store:admin_dashboard" if req.user.is_superuser else "store:home")
+    
     if req.method == "POST":
-        supabase = get_supabase_client()
+        email = req.POST.get("email", "").strip().lower()
+        password = req.POST.get("password", "")
+        
+        # Validate input
+        if not email or not password:
+            messages.error(req, "❌ Please enter both email and password.")
+            return render(req, "store/login.html", {"email_value": email})
+        
         try:
-            response = supabase.auth.sign_in_with_password({"email": req.POST.get("username"), "password": req.POST.get("password")})
+            # Initialize Supabase client
+            supabase = get_supabase_client()
+            
+            # Sign in with Supabase Auth
+            response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            # Check if authentication succeeded
             if response.user:
+                # Get or create Django user
                 django_user, created = get_or_create_django_user(response.user)
+                
+                # Log into Django session
                 django_login(req, django_user)
-                if response.session: store_supabase_session(req, response.session)
-                if created and hasattr(django_user, "user_profile"):
-                    django_user.user_profile.bio = response.user.user_metadata.get("bio", "Shopper"); django_user.user_profile.save()
+                
+                # Store Supabase session if available
+                if response.session:
+                    store_supabase_session(req, response.session)
+                
+                # Success messages + redirect
                 if django_user.is_superuser:
-                    messages.success(req, f"👋 Welcome back, Admin {django_user.username}!"); return redirect("store:admin_dashboard")
-                messages.success(req, f"👋 Welcome back, {django_user.first_name or django_user.username}!"); return redirect("store:home")
-            messages.error(req, "Invalid credentials.")
+                    messages.success(req, f"👋 Welcome back, Admin {django_user.username}!")
+                    return redirect("store:admin_dashboard")
+                
+                messages.success(req, f"👋 Welcome back, {django_user.first_name or django_user.username}!")
+                return redirect("store:home")
+            else:
+                messages.error(req, "❌ Invalid email or password.")
+                
         except Exception as e:
-            err = str(e).lower()
-            if "invalid login" in err: messages.error(req, "Invalid email or password.")
-            elif "email not confirmed" in err: messages.error(req, "Please confirm your email first.")
-            else: messages.error(req, f"Login failed: {str(e)}")
-    return render(req, "store/login.html", {"form": CustomAuthenticationForm(), "supabase_url": settings.SUPABASE_URL, "redirect_url": redirect_url})
+            # Log full error for debugging
+            logger.exception(f"Login error: {type(e).__name__} - {str(e)}")
+            
+            # User-friendly error messages
+            err_msg = str(e).lower()
+            if "invalid login" in err_msg or "invalid credentials" in err_msg:
+                messages.error(req, "❌ Invalid email or password.")
+            elif "email not confirmed" in err_msg:
+                messages.error(req, "⚠️ Please confirm your email address first.")
+            elif "user not found" in err_msg:
+                messages.error(req, "❌ No account found with this email.")
+            else:
+                messages.error(req, "❌ Login failed. Please try again.")
+        
+        # Re-render form with error
+        return render(req, "store/login.html", {"email_value": email})
+    
+    # GET request - show login form
+    return render(req, "store/login.html")
 
 def logout_view(req):
     clear_supabase_session(req); django_logout(req); messages.success(req, "👋 Logged out successfully."); return redirect("store:home")
@@ -320,6 +466,103 @@ def home(req):
         }
     })
 
+@require_POST
+def chatbot_recommend(req):
+    """
+    AI shopping-assistant endpoint. Takes a free-text description of what
+    the customer wants and returns a short reply + matching products,
+    picked only from real catalog data (never invented by the model).
+    """
+    try:
+        body = json.loads(req.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid request body"}, status=400)
+
+    user_message = (body.get("message") or "").strip()
+    history = body.get("history") or []
+
+    if not user_message:
+        return JsonResponse({"error": "message is required"}, status=400)
+
+    if not OPENROUTER_API_KEY:
+        return JsonResponse({"error": "Server not configured (missing OPENROUTER_API_KEY)"}, status=500)
+
+    # Same base queryset convention as home() — active, in-stock products only
+    prods = Product.objects.filter(is_active=True, stock__gt=0)[:200]
+
+    catalog_lines = []
+    id_to_product = {}
+    for p in prods:
+        id_to_product[p.id] = p
+        catalog_lines.append(
+            f"id={p.id} | {p.name} | category={p.category.name} "
+            f"| price=GH₵{p.price} | stock={p.stock} | {p.description[:120]}"
+        )
+    catalog_text = "\n".join(catalog_lines)
+
+    system_prompt = f"""You are a friendly shopping assistant for ShopVibe,
+an online marketplace. A customer will describe what they're looking for.
+Recommend ONLY items from the catalog below — never invent products or IDs.
+
+CATALOG:
+{catalog_text}
+
+Respond with STRICT JSON only, no markdown, no extra text, in this exact shape:
+{{
+  "reply": "a short, friendly, 1-3 sentence response to the customer",
+  "product_ids": [list of matching product ids from the catalog, empty if none fit]
+}}
+Pick at most 5 product_ids, ranked best match first."""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(history[-6:])
+    messages.append({"role": "user", "content": user_message})
+
+    try:
+        ai_resp = requests.post(
+            OPENROUTER_URL,
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://shopvibe.up.railway.app/",
+                "X-Title": "ShopVibe Chatbot",
+            },
+            json={
+                "model": OPENROUTER_MODEL,
+                "messages": messages,
+                "temperature": 0.4,
+                "max_tokens": 400,
+            },
+            timeout=20,
+        )
+        ai_resp.raise_for_status()
+        raw_content = ai_resp.json()["choices"][0]["message"]["content"]
+    except requests.RequestException as e:
+        return JsonResponse({"error": f"AI service error: {e}"}, status=502)
+
+    cleaned = raw_content.strip().strip("`").replace("json\n", "", 1).strip()
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return JsonResponse({"reply": raw_content, "products": []})
+
+    reply_text = parsed.get("reply", "")
+    product_ids = parsed.get("product_ids", []) or []
+
+    matched = [id_to_product[pid] for pid in product_ids if pid in id_to_product]
+    products_json = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "price": str(p.price),
+            "image_url": p.get_image(),
+            "slug": p.slug,
+        }
+        for p in matched
+    ]
+
+    return JsonResponse({"reply": reply_text, "products": products_json})
+
 @login_required
 def product_detail(req, slug):
     product = get_object_or_404(Product, slug=slug, is_active=True)
@@ -359,16 +602,30 @@ def product_detail(req, slug):
     })
 
 @login_required
-def submit_review(req, pid):
-    prod = get_object_or_404(Product, id=pid)
-    if req.method == "POST" and not Review.objects.filter(user=req.user, product=prod).exists():
-        if OrderItem.objects.filter(order__user=req.user, product=prod).exists():
-            form = ReviewForm(req.POST)
-            if form.is_valid():
-                rev = form.save(commit=False); rev.user = req.user; rev.product = prod; rev.save()
-                messages.success(req, "✅ Review submitted successfully!")
-        else: messages.error(req, "❌ Only verified buyers can review.")
-    return redirect("store:product_detail", slug=prod.slug)
+def submit_review(req, product_id):
+    """Handle review submission"""
+    product = get_object_or_404(Product, id=product_id)
+    
+    if req.method == "POST":
+        rating = req.POST.get("rating")
+        comment = req.POST.get("comment", "").strip()
+        
+        if rating and comment:
+            # ✅ Create and save review
+            review = Review.objects.create(
+                user=req.user,
+                product=product,
+                rating=int(rating),
+                comment=comment,
+                # ✅ If you have moderation, default to pending:
+                # is_approved=False  # Uncomment if using moderation
+            )
+            messages.success(req, "✅ Review submitted! Thank you.")
+            
+            # ✅ CRITICAL: Redirect to force fresh context load
+            return redirect("store:product_detail", slug=product.slug)
+    
+    return redirect("store:product_detail", slug=product.slug)
 
 # ==================== CART & CHECKOUT ====================
 
@@ -637,213 +894,564 @@ def update_cart(req):
         return JsonResponse({'success': False, 'error': str(e)})
 # store/views.py
 
-
-from decimal import Decimal
-from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from django.shortcuts import render, redirect
-from django.conf import settings
+logger = logging.getLogger(__name__)
 
 @login_required
 def checkout(req):
     """Display checkout page with Paystack integration"""
-
+    
     cart_data = req.session.get('cart', {})
-
+    
     if not isinstance(cart_data, dict):
         cart_data = {}
-
+    
     if not cart_data:
         messages.warning(req, "🛒 Your cart is empty.")
         return redirect("store:cart")
-
+    
     items = []
     total = Decimal('0.00')
     clean_cart = {}
-
+    
     for pid, item_data in cart_data.items():
-
         try:
             product = Product.objects.get(id=int(pid))
-
+            
             quantity = 1
             color = ''
-
+            
             # Handle dictionary structure
             if isinstance(item_data, dict):
                 quantity = item_data.get('quantity', 1)
                 color = item_data.get('color', '')
-
             # Handle old integer structure
             elif isinstance(item_data, (int, float)):
                 quantity = item_data
-
+            
             # Flatten nested dictionaries
             while isinstance(quantity, dict):
                 quantity = quantity.get('quantity', 1)
-
+            
             # Safe integer conversion
             try:
                 quantity = int(quantity)
                 if quantity < 1:
                     quantity = 1
-            except:
+            except (ValueError, TypeError):
                 quantity = 1
-
+            
             # Safe subtotal calculation
             subtotal = product.price * Decimal(str(quantity))
-
+            
             items.append({
                 "product": product,
                 "qty": quantity,
                 "color": color,
                 "subtotal": subtotal
             })
-
+            
             total += subtotal
-
+            
             # Save cleaned structure
             clean_cart[str(pid)] = {
                 "quantity": quantity,
                 "color": color
             }
-
+            
         except Product.DoesNotExist:
+            logger.warning(f"Product {pid} not found during checkout")
             continue
-
         except Exception as e:
-            print("Checkout Error:", e)
+            logger.error(f"Checkout error processing item {pid}: {e}")
             continue
-
+    
     # Auto-fix corrupted cart data
     if clean_cart != cart_data:
         req.session['cart'] = clean_cart
         req.session.modified = True
-
+    
     # Convert to pesewas/kobo for Paystack
     total_kobo = int(total * 100)
-
+    
+    # Prepare cart JSON for JavaScript (safe serialization)
+    import json
+    cart_json = json.dumps(clean_cart, default=str)
+    
     return render(req, "store/checkout.html", {
         "items": items,
         "total": total,
         "total_kobo": total_kobo,
         "paystack_public_key": settings.PAYSTACK_PUBLIC_KEY,
-        "cart_count": len(items)
+        "cart_count": len(items),
+        "cart_json": cart_json,  # For JavaScript bridge
+        "site_url": settings.SITE_URL,  # For callback URL
     })
 
-@login_required
-def initialize_paystack_payment(req):
-    """Initialize Paystack transaction"""
-    if req.method == "POST":
-        cart_data = req.session.get('cart', {})
-        total = sum(
-            Product.objects.get(id=int(pid)).price * qty 
-            for pid, qty in cart_data.items()
-        )
-        total_kobo = int(total * 100)
-        
-        # Generate unique reference
-        import uuid
-        ref = f"SHOPVIBE-{uuid.uuid4().hex[:10].upper()}"
-        
-        # Initialize Paystack transaction
-        url = "https://api.paystack.co/transaction/initialize"
-        headers = {
-            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "email": req.user.email,
-            "amount": total_kobo,
-            "reference": ref,
-            "metadata": {
-                "user_id": req.user.id,
-                "cart": cart_data,
-                "custom_fields": [
-                    {
-                        "display_name": "User",
-                        "variable_name": "user",
-                        "value": req.user.username
-                    }
-                ]
-            },
-            "callback_url": req.build_absolute_uri('/checkout/verify/')
-        }
-        
-        response = requests.post(url, headers=headers, json=payload)
-        data = response.json()
-        
-        if data.get('status'):
-            # Save transaction reference to session
-            req.session['paystack_ref'] = ref
-            return JsonResponse({
-                'status': True,
-                'authorization_url': data['data']['authorization_url']
-            })
-        else:
-            return JsonResponse({
-                'status': False,
-                'message': 'Failed to initialize payment'
-            }, status=400)
-    
-    return JsonResponse({'status': False}, status=405)
 
 @login_required
-def verify_paystack_payment(req):
-    """Verify Paystack transaction after payment"""
-    reference = req.GET.get('reference') or req.session.get('paystack_ref')
+@require_POST
+def initialize_paystack_payment(req):
+    """Initialize Paystack payment for cart checkout"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # 1️⃣ Validate cart exists and has items
+        cart_data = req.session.get('cart', {})
+        if not cart_data or not isinstance(cart_data, dict):
+            return JsonResponse({'error': 'Cart is empty or invalid'}, status=400)
+        
+        # 2️⃣ Calculate total amount safely (handle nested dict cart format)
+        total = Decimal('0')
+        valid_items = 0
+        
+        for pid, item in cart_data.items():
+            try:
+                # Extract quantity (handle both simple and nested dict formats)
+                if isinstance(item, dict):
+                    qty = item.get('quantity', 1)
+                    # Handle deeply nested dicts (defensive programming)
+                    while isinstance(qty, dict):
+                        qty = qty.get('quantity', 1)
+                    qty = max(1, int(float(qty)))
+                else:
+                    qty = max(1, int(float(item)))
+                
+                # Fetch product and validate
+                product = Product.objects.get(id=int(pid), is_active=True)
+                total += product.price * Decimal(qty)
+                valid_items += 1
+                
+            except Product.DoesNotExist:
+                logger.warning(f"Product {pid} not found or inactive, skipping")
+                continue
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Invalid quantity for product {pid}: {e}")
+                continue
+        
+        # Validate we have valid items and positive total
+        if valid_items == 0 or total <= 0:
+            return JsonResponse({'error': 'No valid items in cart'}, status=400)
+        
+        # 3️⃣ Generate unique reference (timestamp + user ID for uniqueness)
+        reference = f"SV-{req.user.id}-{int(timezone.now().timestamp())}-{valid_items}"
+        
+        # 4️⃣ Build Paystack payload with ALL required fields
+        payload = {
+            'email': req.user.email or 'customer@shopvibe.com',
+            'amount': int(total * 100),  # ✅ Convert GH₵ to kobo (integer)
+            'reference': reference,
+            'callback_url': f"{settings.SITE_URL.rstrip('/')}/checkout/callback/",  # ✅ Use SITE_URL
+            'metadata': {
+                'user_id': req.user.id,
+                'username': req.user.username,
+                'items_count': valid_items,
+                'cart_total_ghs': str(total),  # Store as string to preserve decimal precision
+            },
+            'currency': 'GHS',  # ✅ Explicitly set currency for Ghana
+        }
+        
+        # 5️⃣ Prepare headers with Paystack secret key
+        headers = {
+            'Authorization': f'Bearer {settings.PAYSTACK_SECRET_KEY}',
+            'Content-Type': 'application/json',
+            'User-Agent': 'ShopVibe/1.0',  # Optional but recommended
+        }
+        
+        # 6️⃣ Log request for debugging (remove sensitive data in production)
+        logger.info(f"Paystack init: user={req.user.id}, amount_kobo={payload['amount']}, ref={reference}")
+        
+        # 7️⃣ Call Paystack API with timeout and error handling
+        resp = requests.post(
+            'https://api.paystack.co/transaction/initialize',
+            json=payload,
+            headers=headers,
+            timeout=15  # ✅ 15 second timeout to prevent hanging
+        )
+        
+        # 8️⃣ Handle Paystack 400 errors with detailed logging
+        if resp.status_code == 400:
+            try:
+                error_data = resp.json()
+                logger.error(f"Paystack 400 Bad Request: {error_data}")
+                return JsonResponse({
+                    'error': error_data.get('message', 'Invalid payment request'),
+                    'details': error_data.get('errors', []),
+                    'reference': reference  # Return ref for debugging
+                }, status=400)
+            except Exception as parse_err:
+                logger.error(f"Failed to parse Paystack 400 response: {parse_err}")
+                logger.error(f"Raw response: {resp.text[:300]}")
+        
+        # 9️⃣ Raise for other HTTP errors (401, 403, 500, etc.)
+        resp.raise_for_status()
+        
+        # 🔟 Parse successful response
+        data = resp.json()
+        
+        if data.get('status') and data.get('data', {}).get('authorization_url'):
+            # Save reference to session for verification callback
+            req.session['paystack_ref'] = reference
+            req.session['paystack_amount'] = str(total)  # Store for verification
+            req.session.modified = True
+            
+            logger.info(f"Paystack success: auth_url={data['data']['authorization_url'][:50]}...")
+            
+            return JsonResponse({
+                'success': True,
+                'authorization_url': data['data']['authorization_url'],
+                'reference': reference,
+                'amount_ghs': str(total)
+            })
+        else:
+            logger.error(f"Paystack init failed: {data}")
+            return JsonResponse({
+                'error': data.get('message', 'Payment initialization failed')
+            }, status=400)
+            
+    # 🔻 Comprehensive error handling
+    except requests.exceptions.Timeout:
+        logger.error("Paystack request timed out after 15s")
+        return JsonResponse({'error': 'Payment service timeout. Please try again.'}, status=503)
+        
+    except requests.exceptions.SSLError as e:
+        logger.error(f"Paystack SSL error: {e}")
+        return JsonResponse({'error': 'Secure connection failed'}, status=503)
+        
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Paystack connection error: {e}")
+        return JsonResponse({'error': 'Cannot connect to payment gateway'}, status=503)
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None:
+            logger.error(f"Paystack HTTP {e.response.status_code}: {e.response.text[:200]}")
+        return JsonResponse({'error': 'Payment service unavailable'}, status=503)
+        
+    except requests.exceptions.RequestException as e:
+        logger.exception(f"Paystack request exception: {e}")
+        return JsonResponse({'error': 'Payment service error'}, status=503)
+        
+    except Product.DoesNotExist as e:
+        logger.error(f"Product validation error: {e}")
+        return JsonResponse({'error': 'Invalid product in cart'}, status=400)
+        
+    except Exception as e:
+        logger.exception(f"Unexpected error in initialize_paystack_payment: {e}")
+        return JsonResponse({'error': 'An unexpected error occurred'}, status=500)
+
+@login_required
+def paystack_callback(req):
+    """Handle Paystack payment callback"""
+    import logging
+    import requests
+    from decimal import Decimal
+    from django.conf import settings
+    from store.models import Order, OrderItem, Product
+    
+    logger = logging.getLogger(__name__)
+    
+    reference = req.GET.get('reference')
     
     if not reference:
-        messages.error(req, "❌ No payment reference found.")
-        return redirect("store:cart")
+        logger.warning("Callback without reference")
+        return JsonResponse({
+            'success': False, 
+            'error': 'No payment reference'
+        }, status=400)
     
-    # Verify with Paystack
-    url = f"https://api.paystack.co/transaction/verify/{reference}"
-    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
-    response = requests.get(url, headers=headers)
-    data = response.json()
-    
-    if data.get('status') and data['data']['status'] == 'success':
-        # Payment successful - Create order
+    try:
+        # Verify payment with Paystack
+        verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
+        headers = {
+            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
+            "Content-Type": "application/json",
+        }
+        
+        response = requests.get(verify_url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Check if payment was successful
+        if not (data.get('status') and data.get('data', {}).get('status') == 'success'):
+            logger.warning(f"Payment not successful: {reference}")
+            return JsonResponse({
+                'success': False,
+                'error': 'Payment not completed or cancelled',
+                'status': data.get('data', {}).get('status', 'unknown')
+            }, status=400)
+        
+        # Payment successful - create order
+        paystack_data = data['data']
+        paid_amount_ghs = Decimal(paystack_data['amount']) / Decimal('100')
+        
+        # Get cart from session
         cart_data = req.session.get('cart', {})
-        total = 0
+        
+        # Create order
         order = Order.objects.create(
             user=req.user,
             reference=reference,
-            total_amount=data['data']['amount'] / 100,  # Convert back to GH₵
+            total_amount=paid_amount_ghs,
             payment_status='paid',
             payment_method='paystack',
-            paystack_response=data['data']
+            paystack_response=paystack_data,
+            customer_email=paystack_data.get('customer', {}).get('email', req.user.email),
         )
         
-        # Create order items
-        for pid, qty in cart_data.items():
+        # Process cart items
+        total_calculated = Decimal('0')
+        items_processed = 0
+        
+        for pid, item in cart_data.items():
             try:
-                product = Product.objects.get(id=int(pid))
-                subtotal = product.price * qty
+                if isinstance(item, dict):
+                    qty = item.get('quantity', 1)
+                    while isinstance(qty, dict):
+                        qty = qty.get('quantity', 1)
+                    qty = max(1, int(float(qty)))
+                else:
+                    qty = max(1, int(float(item)))
+                
+                product = Product.objects.get(id=int(pid), is_active=True)
+                
+                # Reduce stock
+                if product.stock >= qty:
+                    product.stock -= qty
+                    product.save()
+                
+                # Create order item
                 OrderItem.objects.create(
                     order=order,
                     product=product,
                     quantity=qty,
                     price=product.price,
-                    subtotal=subtotal
+                    subtotal=product.price * qty,
                 )
-                total += subtotal
                 
-                # Reduce stock
-                product.stock -= qty
-                product.save()
-            except Product.DoesNotExist:
+                total_calculated += product.price * qty
+                items_processed += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing item {pid}: {e}")
                 continue
         
         # Clear cart
         req.session['cart'] = {}
+        req.session.pop('paystack_ref', None)
+        req.session.pop('paystack_amount', None)
         req.session.modified = True
         
-        messages.success(req, f"✅ Payment successful! Order #{order.id} created.")
+        logger.info(f"Order created from callback: #{order.id}")
+        
+        return JsonResponse({
+            'success': True,
+            'order_id': order.id,
+            'message': 'Payment successful'
+        })
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"Verification timeout: {reference}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Payment verification timeout'
+        }, status=503)
+        
+    except Exception as e:
+        logger.exception(f"Callback error: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+@login_required
+def verify_paystack_payment(req):
+    """Verify Paystack transaction after customer completes payment"""
+    logger = logging.getLogger(__name__)
+    
+    # Get reference from GET params or session fallback
+    reference = req.GET.get('reference') or req.session.get('paystack_ref')
+    
+    if not reference:
+        logger.warning("Payment verification attempted without reference")
+        messages.error(req, "❌ No payment reference found. Please contact support.")
+        return redirect("store:cart")
+    
+    # Validate reference format (defensive check)
+    if not reference.startswith("SV-"):
+        logger.warning(f"Invalid reference format: {reference}")
+        messages.error(req, "❌ Invalid payment reference.")
+        return redirect("store:cart")
+    
+    try:
+        # 1️⃣ Call Paystack verification endpoint
+        verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
+        headers = {
+            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
+            "Content-Type": "application/json",
+        }
+        
+        logger.info(f"Verifying Paystack transaction: {reference}")
+        
+        response = requests.get(
+            verify_url,
+            headers=headers,
+            timeout=30  # Longer timeout for verification
+        )
+        
+        # Handle 400/404 for invalid reference
+        if response.status_code in [400, 404]:
+            try:
+                error_data = response.json()
+                logger.error(f"Paystack verify {response.status_code}: {error_data}")
+                messages.error(req, f"❌ Invalid payment reference: {error_data.get('message', 'Not found')}")
+            except:
+                logger.error(f"Paystack verify error (raw): {response.text[:200]}")
+                messages.error(req, "❌ Payment verification failed.")
+            return redirect("store:checkout")
+        
+        # Raise for other HTTP errors
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # 2️⃣ Check if payment was successful
+        if not (data.get('status') and data.get('data', {}).get('status') == 'success'):
+            status = data.get('data', {}).get('status', 'unknown')
+            logger.warning(f"Payment not successful: ref={reference}, status={status}")
+            messages.error(req, f"❌ Payment status: {status}. Please contact support.")
+            return redirect("store:checkout")
+        
+        # 3️⃣ Extract payment data
+        paystack_data = data['data']
+        paid_amount_kobo = paystack_data.get('amount', 0)
+        paid_amount_ghs = Decimal(paid_amount_kobo) / Decimal('100')
+        customer_email = paystack_data.get('customer', {}).get('email', req.user.email)
+        
+        # 4️⃣ Validate amount matches cart total (prevent tampering)
+        expected_amount_str = req.session.get('paystack_amount')
+        if expected_amount_str:
+            expected_amount = Decimal(expected_amount_str)
+            if abs(paid_amount_ghs - expected_amount) > Decimal('0.01'):  # Allow 1 pesewa tolerance
+                logger.error(f"Amount mismatch: paid={paid_amount_ghs}, expected={expected_amount}")
+                messages.error(req, "❌ Payment amount mismatch. Order not processed.")
+                return redirect("store:checkout")
+        
+        # 5️⃣ Get cart data and create order
+        cart_data = req.session.get('cart', {})
+        if not isinstance(cart_data, dict) or not cart_data:
+            logger.error(f"Empty/invalid cart for verified payment: {reference}")
+            messages.error(req, "❌ Cart data not found. Please contact support.")
+            return redirect("store:home")
+        
+        # 6️⃣ Create Order record
+        order = Order.objects.create(
+            user=req.user,
+            reference=reference,
+            total_amount=paid_amount_ghs,
+            payment_status='paid',
+            payment_method='paystack',
+            paystack_response=paystack_data,  # Store full response for audit
+            customer_email=customer_email,
+        )
+        
+        # 7️⃣ Process each cart item
+        total_calculated = Decimal('0')
+        items_processed = 0
+        
+        for pid, item in cart_data.items():
+            try:
+                # Extract quantity and variant info
+                if isinstance(item, dict):
+                    qty = item.get('quantity', 1)
+                    color = item.get('color', '')
+                    size = item.get('size', '')
+                    # Handle nested dicts
+                    while isinstance(qty, dict):
+                        qty = qty.get('quantity', 1)
+                    qty = max(1, int(float(qty)))
+                else:
+                    qty = max(1, int(float(item)))
+                    color = ''
+                    size = ''
+                
+                # Fetch product
+                product = Product.objects.select_for_update().get(
+                    id=int(pid), 
+                    is_active=True
+                )
+                
+                # Check stock availability
+                if product.stock < qty:
+                    logger.warning(f"Insufficient stock for product {pid}: have={product.stock}, need={qty}")
+                    messages.warning(req, f"⚠️ {product.name} has limited stock. Order adjusted.")
+                    qty = product.stock  # Adjust to available stock
+                
+                # Calculate line total
+                line_total = product.price * Decimal(qty)
+                
+                # Create OrderItem
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=qty,
+                    price=product.price,
+                    subtotal=line_total,
+                    color=color,
+                    size=size,
+                )
+                
+                # Reduce product stock (with select_for_update to prevent race conditions)
+                product.stock = max(0, product.stock - qty)
+                product.save(update_fields=['stock'])
+                
+                total_calculated += line_total
+                items_processed += 1
+                
+            except Product.DoesNotExist:
+                logger.error(f"Product {pid} not found during order processing")
+                continue
+            except Exception as item_err:
+                logger.exception(f"Error processing item {pid}: {item_err}")
+                continue
+        
+        # 8️⃣ Update order with calculated total (audit check)
+        if items_processed > 0:
+            order.total_amount = total_calculated
+            order.items_count = items_processed
+            order.save(update_fields=['total_amount', 'items_count'])
+        
+        # 9️⃣ Clear cart session data
+        req.session['cart'] = {}
+        req.session.pop('paystack_ref', None)
+        req.session.pop('paystack_amount', None)
+        req.session.modified = True
+        
+        # 🔟 Log success and redirect
+        logger.info(f"Order created: #{order.id} for user {req.user.id}, total={total_calculated}")
+        messages.success(req, f"✅ Payment successful! Order #{order.id} confirmed.")
+        
         return redirect("store:order_success", order_id=order.id)
-    else:
-        messages.error(req, "❌ Payment verification failed.")
+        
+    # 🔻 Error handling for verification
+    except requests.exceptions.Timeout:
+        logger.error(f"Paystack verify timeout for ref: {reference}")
+        messages.error(req, "⏳ Payment verification timed out. Please check your orders.")
+        return redirect("store:user_orders")
+        
+    except requests.exceptions.ConnectionError:
+        logger.error(f"Paystack verify connection error: {reference}")
+        messages.error(req, "🌐 Connection error verifying payment. Please contact support.")
+        return redirect("store:checkout")
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None:
+            logger.error(f"Paystack verify HTTP {e.response.status_code}: {e.response.text[:200]}")
+        messages.error(req, "❌ Payment verification failed. Please contact support.")
+        return redirect("store:checkout")
+        
+    except Exception as e:
+        logger.exception(f"Unexpected error verifying payment {reference}: {e}")
+        messages.error(req, "❌ An unexpected error occurred. Please contact support.")
         return redirect("store:checkout")
 
 @login_required
@@ -913,52 +1521,75 @@ def profile(req):
 # In seller_signup view:
 # store/views.py
 
-@login_required
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.contrib.auth import login
+from .forms import SellerSignupForm
+
+@login_required  # ✅ User must be logged in to become a seller
 def seller_signup(req):
+    # If user already has a seller profile, redirect appropriately
+    if hasattr(req.user, 'seller_profile'):
+        status = req.user.seller_profile.status
+        if status == 'approved':
+            messages.info(req, "✅ You already have an approved seller account.")
+            return redirect('store:seller_dashboard')
+        elif status == 'pending':
+            messages.warning(req, "⏳ Your application is pending admin review.")
+            return redirect('store:profile')
+        # If rejected, allow them to reapply below
 
     if req.method == 'POST':
-        form = SellerSignupForm(req.POST)
-        
+        form = SellerSignupForm(req.POST, user=req.user) 
         if form.is_valid():
             try:
                 with transaction.atomic():
-                    # 1️⃣ Create User
-                    user = User.objects.create_user(
-                        username=form.cleaned_data['username'],
-                        email=form.cleaned_data['email'],
-                        password=form.cleaned_data['password']
-                    )
+                    # Update existing user (don't create new one)
+                    user = req.user
+                    user.email = form.cleaned_data['email']
+                    if form.cleaned_data['password']:  # Only update if new password provided
+                        user.set_password(form.cleaned_data['password'])
+                    user.save()
                     
-                    # 2️⃣ Create SellerProfile with WhatsApp
+                    # Create SellerProfile linked to existing user
                     seller_profile = SellerProfile.objects.create(
                         user=user,
                         store_name=form.cleaned_data['store_name'],
                         phone=form.cleaned_data['phone'],
-                        whatsapp=form.cleaned_data['whatsapp'],  # ✅ Saved here
                         address=form.cleaned_data['address'],
-                        region=form.cleaned_data.get('region', '')
+                        payment_number=form.cleaned_data.get('payment_number', ''),
+                        status='pending',
+                        is_verified=False
                     )
                     
-                    # 3️⃣ Auto-login the seller
-                    login(req, user)
-                    
-                    # 4️⃣ Success message
-                    messages.success(
-                        req, 
-                        f"Welcome {user.username}! Your store '{seller_profile.store_name}' is ready. "
-                        f"WhatsApp: {seller_profile.whatsapp or 'Not set'}"
-                    )
-                    
-                    return redirect('store:seller_dashboard')
+                    messages.success(req, f"✅ Application submitted! '{seller_profile.store_name}' pending review.")
+                    return redirect('store:home')
                     
             except Exception as e:
-                messages.error(req, f"Registration failed: {str(e)}")
+                import logging
+                logging.error(f"Seller signup failed: {e}")
+                messages.error(req, "Registration failed. Please try again.")
         else:
+            # Console debug output
+            print("\n" + "🔴" * 40)
+            print(" 🛑 SELLER SIGNUP VALIDATION FAILED ")
+            print("🔴" * 40)
+            print(f"📥 SUBMITTED DATA: {dict(req.POST)}")
+            print("\n❌ VALIDATION ERRORS:")
+            for field, errors in form.errors.items():
+                print(f"   🔸 {field.upper()}: {', '.join(errors)}")
+            print("🔴" * 40 + "\n")
             messages.error(req, "Please correct the errors below.")
     else:
-        form = SellerSignupForm()
-    
-    return render(req, 'store/seller_registration.html', {'form': form})
+        # ✅ PRE-FILL FORM WITH EXISTING USER DATA
+        initial_data = {
+            'username': req.user.username,
+            'email': req.user.email,
+            # Password fields left empty for security
+        }
+        form = SellerSignupForm(initial=initial_data, user=req.user)
+
+    return render(req, 'store/seller_signup.html', {'form': form})
 
 @login_required
 @seller_required
@@ -1041,6 +1672,98 @@ def seller_analytics(req):
 
 @login_required
 @seller_required
+def fix_glb_diffuse_factors(glb_bytes):
+    """
+    Fix GLB files where diffuseFactor is white [1,1,1,1], washing out texture colours.
+    Samples real pixel colour from each material texture and writes it back.
+    Always returns valid bytes — original if anything fails.
+    """
+    import struct, json, io
+    try:
+        from PIL import Image
+    except ImportError:
+        return glb_bytes
+
+    try:
+        data = bytearray(glb_bytes)
+
+        if data[:4] != b"glTF":
+            return glb_bytes  # not a GLB file
+
+        # ── Parse JSON chunk ──────────────────────────────────
+        chunk0_len = struct.unpack_from("<I", data, 12)[0]
+        gltf       = json.loads(data[20:20 + chunk0_len])
+
+        # ── Parse binary chunk ────────────────────────────────
+        bin_start  = 20 + chunk0_len
+        chunk1_len = struct.unpack_from("<I", data, bin_start)[0]
+        bin_data   = bytes(data[bin_start + 8 : bin_start + 8 + chunk1_len])
+
+        bv_list  = gltf.get("bufferViews", [])
+        img_list = gltf.get("images", [])
+        tex_list = gltf.get("textures", [])
+
+        def sample_color(tex_idx):
+            src   = tex_list[tex_idx]["source"]
+            bv    = bv_list[img_list[src]["bufferView"]]
+            chunk = bin_data[bv["byteOffset"]: bv["byteOffset"] + bv["byteLength"]]
+            img   = Image.open(io.BytesIO(chunk)).convert("RGB")
+            w, h  = img.size
+            pts   = [(int(fx*w), int(fy*h)) for fx in (.2,.4,.5,.6,.8) for fy in (.2,.4,.5,.6,.8)]
+            avg   = tuple(sum(img.getpixel(p)[i] for p in pts)//len(pts) for i in range(3))
+            return [round(c/255, 4) for c in avg] + [1.0]
+
+        changed = False
+
+        # Fix KHR_materials_pbrSpecularGlossiness (older PBR format — most white-wash cases)
+        for mat in gltf.get("materials", []):
+            ext = mat.get("extensions", {}).get("KHR_materials_pbrSpecularGlossiness", {})
+            df  = ext.get("diffuseFactor", [0,0,0,1])
+            if df[0] > 0.95 and df[1] > 0.95 and df[2] > 0.95:
+                dt = ext.get("diffuseTexture")
+                if dt:
+                    try:
+                        ext["diffuseFactor"] = sample_color(dt["index"])
+                        changed = True
+                    except Exception:
+                        pass  # skip this material, leave as-is
+
+        # Also fix standard PBR baseColorFactor if it is white and has a texture
+        for mat in gltf.get("materials", []):
+            pbr = mat.get("pbrMetallicRoughness", {})
+            bf  = pbr.get("baseColorFactor", [0,0,0,1])
+            if bf[0] > 0.95 and bf[1] > 0.95 and bf[2] > 0.95:
+                bt = pbr.get("baseColorTexture")
+                if bt:
+                    try:
+                        pbr["baseColorFactor"] = sample_color(bt["index"])
+                        changed = True
+                    except Exception:
+                        pass
+
+        if not changed:
+            return glb_bytes  # nothing needed fixing
+
+        # ── Rebuild GLB with updated JSON ─────────────────────
+        new_json = json.dumps(gltf, separators=(",",":")).encode("utf-8")
+        # Pad to 4-byte boundary with spaces (GLB spec)
+        while len(new_json) % 4:
+            new_json += b" "
+
+        # Update chunk0 length and total file length in header
+        size_diff = len(new_json) - chunk0_len
+        new_total = struct.unpack_from("<I", data, 8)[0] + size_diff
+        struct.pack_into("<I", data, 8,  new_total)
+        struct.pack_into("<I", data, 12, len(new_json))
+
+        # Splice new JSON into the buffer
+        fixed = bytes(data[:20]) + new_json + bytes(data[20 + chunk0_len:])
+        return fixed
+
+    except Exception:
+        return glb_bytes  # always safe
+
+
 def upload_product(req):
     """Handle product upload with single category selection"""
     if req.method == "POST":
@@ -1065,6 +1788,50 @@ def upload_product(req):
                 except Exception as e:
                     messages.error(req, f"❌ Image upload failed: {str(e)}")
                     return render(req, "store/upload_product.html", {"form": form})
+
+            # ── Handle VR / 3D file upload to Supabase ──
+            vr_enabled = req.POST.get("vr_enabled")
+            vr_file = req.FILES.get("vr_model") or req.FILES.get("vr_image")
+            if vr_enabled and vr_file:
+                vr_type = req.POST.get("vr_type", "3d_model")
+                ext = vr_file.name.split(".")[-1].lower()
+                vr_filename = f"products/vr/{uuid.uuid4()}.{ext}"
+
+                # Set correct content-type per file type
+                content_type_map = {
+                    "glb":  "model/gltf-binary",
+                    "gltf": "model/gltf+json",
+                    "jpg":  "image/jpeg",
+                    "jpeg": "image/jpeg",
+                    "jfif": "image/jpeg",
+                    "png":  "image/png",
+                    "webp": "image/webp",
+                }
+                vr_content_type = content_type_map.get(ext, vr_file.content_type)
+
+                try:
+                    vr_bytes = vr_file.read()
+
+                    # Auto-fix colour washing on GLB files
+                    if ext == "glb":
+                        try:
+                            vr_bytes = fix_glb_diffuse_factors(vr_bytes)
+                        except Exception:
+                            pass  # skip fix silently, upload original
+
+                    supabase = get_supabase_client()
+                    supabase.storage.from_("product-uploads").upload(
+                        vr_filename,
+                        vr_bytes,
+                        {"content-type": vr_content_type, "upsert": "true"}
+                    )
+                    product.vr_supabase_path = vr_filename
+                    product.vr_type = vr_type
+                except Exception as e:
+                    messages.warning(req, f"⚠️ VR upload failed: {str(e)}")
+            else:
+                product.vr_supabase_path = None
+                product.vr_type = None
             
             # ✅ Category is already handled by the form's ModelChoiceField
             # No need for custom_category logic anymore
@@ -1103,8 +1870,13 @@ def order_history(req):
 
 # ==================== ADMIN DASHBOARD ====================
 
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.db.models import Sum
+from .models import User, Product, Order, SellerProfile  # ✅ Ensure SellerProfile is imported
+
+# Note: @superuser_required isn't built into Django. Using standard check below:
 @login_required
-@superuser_required
+@user_passes_test(lambda u: u.is_superuser)
 def admin_dashboard(req):
     users = User.objects.all().order_by("-date_joined")
     products = Product.objects.select_related("category", "seller").order_by("-created_at")
@@ -1115,12 +1887,16 @@ def admin_dashboard(req):
         "orders": Order.objects.count(), 
         "revenue": Order.objects.aggregate(total=Sum("total_amount"))["total"] or 0
     }
+    
+    pending_sellers = SellerProfile.objects.filter(status='pending').select_related('user').order_by('-created_at')
+
     return render(req, "store/admin_dashboard.html", {
         "users": users,
         "products": products,
         "stats": stats,
-        "recent_orders": Order.objects.select_related("user").order_by("-created_at")[:5],  # ✅ Added
-        "statuses": ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"]           # ✅ Added
+        "recent_orders": Order.objects.select_related("user").order_by("-created_at")[:5],
+        "statuses": ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"],
+        "pending_sellers": pending_sellers  # ✅ Passed to template for the approval table
     })
 
 @login_required
@@ -1204,6 +1980,9 @@ def admin_analytics(req):
         total_sales=Sum("products__order_items__price")
     ).order_by("-total_sales")[:10]
     
+    # ✅ ADD THIS LINE: Fetch pending sellers for approval workflow
+    pending_sellers = SellerProfile.objects.filter(status='pending').select_related('user').order_by('-created_at')[:10]
+    
     return render(req, "store/admin_analytics.html", {
         "stats": {
             "users": total_users, "sellers": total_sellers, "products": total_products,
@@ -1216,7 +1995,9 @@ def admin_analytics(req):
         },
         "top_products": top_products,
         "recent_orders": recent_orders,
-        "seller_stats": seller_stats
+        "seller_stats": seller_stats,
+        # ✅ ADD THIS: Pass pending sellers to template
+        "pending_sellers": pending_sellers,
     })
 
 @login_required
@@ -1291,101 +2072,145 @@ def track_order(req, order_id):
     """Buyer-facing order tracking page with location timeline"""
     order = get_object_or_404(Order, id=order_id, user=req.user)
     
-    # Build status timeline
-    timeline = []
+    # ✅ Map any DB variation to clean display names
+    status_map = {
+        'pending': 'Pending', 'processing': 'Processing', 'shipped': 'Shipped',
+        'in_transit': 'In Transit', 'in transit': 'In Transit',
+        'out_for_delivery': 'Out for Delivery', 'out for delivery': 'Out for Delivery',
+        'delivered': 'Delivered', 'cancelled': 'Cancelled'
+    }
+    
+    raw = (order.status or 'pending').lower()
+    current_status = status_map.get(raw, 'Pending')
+    
     status_order = ["Pending", "Processing", "Shipped", "In Transit", "Out for Delivery", "Delivered"]
     
+    # ✅ Safely get location (replaces order.delivery_location)
+    location = getattr(order, 'shipping_address', getattr(order, 'delivery_address', None))
+    # Fallback to city if address fields don't exist
+    if not location:
+        location = getattr(order, 'shipping_city', getattr(order, 'city', None))
+    
+    timeline = []
+    try:
+        current_index = status_order.index(current_status)
+    except ValueError:
+        current_index = 0
+    
     for i, status in enumerate(status_order):
-        if order.status == status:
-            # Current status
+        if i == current_index:
             timeline.append({
                 "status": status,
                 "active": True,
                 "date": order.delivered_at if status == "Delivered" else order.created_at,
-                "location": order.delivery_location if status in ["In Transit", "Out for Delivery", "Delivered"] else None
+                "location": location if status in ["In Transit", "Out for Delivery", "Delivered"] else None
             })
-        elif status_order.index(order.status) > i:
-            # Completed status
+        elif i < current_index:
             timeline.append({
                 "status": status,
                 "active": False,
-                "date": order.created_at,  # Simplified: use order date for all past steps
+                "date": order.created_at,
                 "location": None
             })
         else:
-            # Future status
             break
-    
+            
     return render(req, "store/track_order.html", {
         "order": order,
         "timeline": timeline,
-        "can_cancel": order.status in ["Pending", "Processing"]
+        "can_cancel": current_status in ["Pending", "Processing"]
     })
 
 @login_required
+def cancel_order(req, order_id):
+    """Handle order cancellation"""
+    order = get_object_or_404(Order, id=order_id, user=req.user)
+    
+    # Allow cancellation only if Pending or Processing (handle both casings)
+    if order.status in ['Pending', 'Processing', 'pending', 'processing']:
+        order.status = 'Cancelled'
+        order.save()
+        messages.success(req, "Order cancelled successfully.")
+    else:
+        messages.error(req, "This order cannot be cancelled at this stage.")
+        
+    return redirect('store:track_order', order_id=order_id)
+
+@login_required
 def update_order_status(req, order_id):
-    """Allow sellers/admin to update order status (including marking as delivered)"""
+    """Allow sellers/admin to update order status"""
     if req.method != "POST":
         return redirect("store:order_history")
     
     order = get_object_or_404(Order, id=order_id)
-    new_status = req.POST.get("status")
+    new_status = req.POST.get("status", "").strip()
     
-    # Permission check: seller can only update their own orders, admin can update any
+    # Permission check
     if not req.user.is_superuser:
-        if not order.items.filter(product__seller=req.user.seller_profile).exists():
+        seller = getattr(req.user, 'seller_profile', None)
+        if not seller or not order.items.filter(product__seller=seller).exists():
             messages.error(req, "🚫 You can only manage your own orders.")
             return redirect("store:order_history")
     
-    valid_statuses = [s[0] for s in Order.STATUS]
-    if new_status in valid_statuses:
-        old_status = order.status
-        order.status = new_status
-        order.save()  # This triggers the auto-set delivered_at in model.save()
-        messages.success(req, f"✅ Order #{order.id} updated: {old_status} → {new_status}")
-    else:
-        messages.error(req, "❌ Invalid status.")
+    # ✅ Get valid statuses directly from model
+    status_field = Order._meta.get_field('status')
+    valid_statuses = [choice[0] for choice in status_field.choices]
     
-    # Redirect based on user role
+    #  DEBUG: See exactly what's being submitted vs expected
+    print(f"📥 Submitted: '{new_status}'")
+    print(f"✅ Valid: {valid_statuses}")
+    
+    # Normalize input to lowercase for safe comparison
+    normalized = new_status.lower()
+    valid_lower = [s.lower() for s in valid_statuses]
+    
+    if normalized in valid_lower:
+        # Find the exact model key that matches
+        order.status = next(s for s in valid_statuses if s.lower() == normalized)
+        order.save()
+        messages.success(req, f"✅ Order #{order.id} updated to {order.status.title()}")
+    else:
+        messages.error(req, f"❌ Invalid status. Choose from: {', '.join(valid_statuses)}")
+    
+    # Redirect based on role
     if req.user.is_superuser:
         return redirect("store:admin_orders")
     return redirect("store:seller_dashboard")
-
 # store/views.py
 
-@login_required
-def complete_profile(req):
-    """Handle profile completion for new users"""
-    profile, _ = UserProfile.objects.get_or_create(user=req.user)
+# @login_required
+# def complete_profile(req):
+#     """Handle profile completion for new users"""
+#     profile, _ = UserProfile.objects.get_or_create(user=req.user)
     
-    if req.method == "POST":
-        # ✅ Handle text-based country field
-        country = req.POST.get("country", "").strip()
-        whatsapp = req.POST.get("whatsapp_number", "").strip()
+#     if req.method == "POST":
+#         # ✅ Handle text-based country field
+#         country = req.POST.get("country", "").strip()
+#         whatsapp = req.POST.get("whatsapp_number", "").strip()
         
-        if country:
-            profile.country = country
-        if whatsapp:
-            profile.whatsapp_number = whatsapp
+#         if country:
+#             profile.country = country
+#         if whatsapp:
+#             profile.whatsapp_number = whatsapp
             
-        profile.save(update_fields=["country", "whatsapp_number"])
+#         profile.save(update_fields=["country", "whatsapp_number"])
         
-        # Sync to Supabase if needed
-        update_supabase_prof(req.user.id, {
-            "country": country,
-            "whatsapp_number": whatsapp
-        })
+#         # Sync to Supabase if needed
+#         update_supabase_prof(req.user.id, {
+#             "country": country,
+#             "whatsapp_number": whatsapp
+#         })
         
-        messages.success(req, "✅ Profile completed!")
+#         messages.success(req, "✅ Profile completed!")
         
-        # Redirect to intended page or home
-        next_url = req.GET.get("next", "store:home")
-        return redirect(next_url)
+#         # Redirect to intended page or home
+#         next_url = req.GET.get("next", "store:home")
+#         return redirect(next_url)
     
-    return render(req, "store/complete_profile.html", {
-        "profile": profile,
-        "next": req.GET.get("next", "store:home")
-    })
+#     return render(req, "store/complete_profile.html", {
+#         "profile": profile,
+#         "next": req.GET.get("next", "store:home")
+#     })
 
 
 def get_regions_by_country(req):
@@ -1396,111 +2221,15 @@ def get_regions_by_country(req):
         return JsonResponse({'regions': list(regions)})
     return JsonResponse({'regions': []})
 
-@require_POST
-def chatbot_recommend(req):
-    """
-    AI shopping-assistant endpoint. Takes a free-text description of what
-    the customer wants and returns a short reply + matching products,
-    picked only from real catalog data (never invented by the model).
-    """
-    try:
-        body = json.loads(req.body.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({"error": "Invalid request body"}, status=400)
-
-    user_message = (body.get("message") or "").strip()
-    history = body.get("history") or []
-
-    if not user_message:
-        return JsonResponse({"error": "message is required"}, status=400)
-
-    if not OPENROUTER_API_KEY:
-        return JsonResponse({"error": "Server not configured (missing OPENROUTER_API_KEY)"}, status=500)
-
-    # Same base queryset convention as home() — active, in-stock products only
-    prods = Product.objects.filter(is_active=True, stock__gt=0)[:200]
-
-    catalog_lines = []
-    id_to_product = {}
-    for p in prods:
-        id_to_product[p.id] = p
-        catalog_lines.append(
-            f"id={p.id} | {p.name} | category={p.category.name} "
-            f"| price=GH₵{p.price} | stock={p.stock} | {p.description[:120]}"
-        )
-    catalog_text = "\n".join(catalog_lines)
-
-    system_prompt = f"""You are a friendly shopping assistant for ShopVibe,
-an online marketplace. A customer will describe what they're looking for.
-Recommend ONLY items from the catalog below — never invent products or IDs.
-
-CATALOG:
-{catalog_text}
-
-Respond with STRICT JSON only, no markdown, no extra text, in this exact shape:
-{{
-  "reply": "a short, friendly, 1-3 sentence response to the customer",
-  "product_ids": [list of matching product ids from the catalog, empty if none fit]
-}}
-Pick at most 5 product_ids, ranked best match first."""
-
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history[-6:])
-    messages.append({"role": "user", "content": user_message})
-
-    try:
-        ai_resp = requests.post(
-            OPENROUTER_URL,
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://shopvibe.up.railway.app/",
-                "X-Title": "ShopVibe Chatbot",
-            },
-            json={
-                "model": OPENROUTER_MODEL,
-                "messages": messages,
-                "temperature": 0.4,
-                "max_tokens": 400,
-            },
-            timeout=20,
-        )
-        ai_resp.raise_for_status()
-        raw_content = ai_resp.json()["choices"][0]["message"]["content"]
-    except requests.RequestException as e:
-        return JsonResponse({"error": f"AI service error: {e}"}, status=502)
-
-    cleaned = raw_content.strip().strip("`").replace("json\n", "", 1).strip()
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        return JsonResponse({"reply": raw_content, "products": []})
-
-    reply_text = parsed.get("reply", "")
-    product_ids = parsed.get("product_ids", []) or []
-
-    matched = [id_to_product[pid] for pid in product_ids if pid in id_to_product]
-    products_json = [
-        {
-            "id": p.id,
-            "name": p.name,
-            "price": str(p.price),
-            "image_url": p.get_image(),
-            "slug": p.slug,
-        }
-        for p in matched
-    ]
-
-    return JsonResponse({"reply": reply_text, "products": products_json})
 
 @login_required
 def product_detail(req, slug):
     product = get_object_or_404(Product, slug=slug, is_active=True)
     
-    # 1️⃣ Existing: Supabase profile fetch
+    # 1️⃣ Supabase profile fetch
     seller_prof = get_supabase_prof(product.seller.user_id) if product.seller else None
     
-    # 2️ ✅ WhatsApp Retrieval & Formatting
+    # 2️⃣ WhatsApp Retrieval & Formatting
     whatsapp_raw = None
     
     # Priority A: Supabase profile data
@@ -1512,46 +2241,61 @@ def product_detail(req, slug):
         seller_obj = getattr(product.seller, 'seller_profile', None) or product.seller
         whatsapp_raw = getattr(seller_obj, 'whatsapp', None) or getattr(seller_obj, 'phone', None)
         
-    # Format for WhatsApp API (wa.me/ requires digits + country code)
+    # Format for WhatsApp API
     whatsapp_api_id = None
     whatsapp_display = None
     
     if whatsapp_raw:
-        # Strip everything except digits
         clean_digits = re.sub(r'[^\d]', '', str(whatsapp_raw))
         if clean_digits:
-            # Ensure Ghana country code (233)
             if not clean_digits.startswith('233'):
                 clean_digits = '233' + clean_digits.lstrip('0')
             whatsapp_api_id = clean_digits
             whatsapp_display = f"+{clean_digits}"
     
-    # 3️⃣ Existing: Fetch similar products
+    # 3️⃣ Fetch related products
     related_products = Product.objects.filter(
         category=product.category,
         is_active=True,
         stock__gt=0
     ).exclude(id=product.id).order_by('-created_at')[:4]
     
-    # 4️⃣ Existing: Handle review submission
+    # ✅ 4️⃣ FETCH REVIEWS FOR THIS PRODUCT (The missing piece!)
+    reviews = Review.objects.filter(
+        product=product
+    ).filter(
+        # Show approved reviews OR the current user's own pending reviews
+        Q(is_approved=True) | Q(user=req.user)
+    ).order_by('-created_at')
+    
+    # 5️⃣ Handle review submission
     if req.method == "POST" and req.user.is_authenticated:
         rating = req.POST.get("rating")
-        comment = req.POST.get("comment", "")
-        if rating:
+        comment = req.POST.get("comment", "").strip()
+        
+        if rating and comment:
             Review.objects.update_or_create(
-                user=req.user, product=product,
-                defaults={"rating": rating, "comment": comment}
+                user=req.user, 
+                product=product,
+                defaults={
+                    "rating": int(rating), 
+                    "comment": comment
+                    # Add "is_approved": False here if you want moderation
+                }
             )
+            messages.success(req, "✅ Review submitted!")
+        
+        # ✅ Redirect to avoid duplicate submissions on page refresh
         return redirect("store:product_detail", slug=slug)
     
-    # 5️⃣ Render with WhatsApp context
+    # 6️⃣ Render with ALL context including reviews
     return render(req, "store/product_detail.html", {
         "product": product,
         "seller_prof": seller_prof,
         "related_products": related_products,
-        # ✅ WhatsApp variables for template
-        "whatsapp_number": whatsapp_api_id,       # Digits only for wa.me/ link
-        "whatsapp_display": whatsapp_display,     # Formatted for UI (e.g., +233...)
+        "reviews": reviews,  # ✅ Now properly defined and passed
+        "whatsapp_number": whatsapp_api_id,
+        "whatsapp_display": whatsapp_display,
         "whatsapp_available": bool(whatsapp_api_id),
         "seller_name": seller_prof.get('store_name') if seller_prof else getattr(product.seller, 'store_name', 'Seller'),
     })
@@ -1609,6 +2353,9 @@ def analytics_dashboard(req):
     """Analytics dashboard with accurate metrics and chart data"""
     
     is_staff = req.user.is_staff
+    
+    # ✅ ADD THIS: Fetch pending sellers (only for admins/staff)
+    pending_sellers = SellerProfile.objects.filter(status='pending').select_related('user').order_by('-created_at') if is_staff else []
     
     # ✅ Build base Q filters (no kwargs mixed in)
     if is_staff:
@@ -1720,6 +2467,7 @@ def analytics_dashboard(req):
         'top_products': list(top_products),
         'is_staff': is_staff,
         'last_updated': now.strftime('%Y-%m-%d %H:%M:%S'),
+        'pending_sellers': pending_sellers,
     }
     
     return render(req, 'store/analytics_dashboard.html', context)
@@ -1798,6 +2546,79 @@ def analytics_api(req):
         'page_views_last_hour': views_last_hour,
         'timestamp': now.isoformat()
     })
+
+
+def forgot_password(req):
+    """Step 1: Send password reset email via Supabase"""
+    if req.user.is_authenticated:
+        return redirect('store:home')
+        
+    if req.method == 'POST':
+        email = req.POST.get('email', '').strip()
+        if not email:
+            messages.error(req, "Please enter your email address.")
+        else:
+            try:
+                supabase = get_supabase_client()
+                redirect_url = req.build_absolute_uri(reverse('store:password_reset')).rstrip('/')
+                
+                # ✅ Python SDK uses snake_case + options dict
+                supabase.auth.reset_password_for_email(email, options={"redirectTo": redirect_url})
+                
+                messages.success(req, f"✅ Reset link sent to {email}. Check your inbox (and spam folder).")
+                return redirect('store:login')
+                
+            except Exception as e:
+                print(f"🔴 SUPABASE RESET ERROR: {type(e).__name__} - {str(e)}")
+                messages.error(req, "❌ Failed to send reset email. Please try again.")
+                
+    return render(req, 'store/forgot_password.html')
+
+def password_reset(req):
+    """Display the password reset page."""
+    return render(req, 'store/reset_password.html')
+
+@require_POST
+def api_reset_password(req):
+    """API: Update password using Supabase recovery token"""
+    try:
+        data = json.loads(req.body)
+        token = data.get('token')
+        new_password = data.get('password')
+        
+        if not token or not new_password:
+            return JsonResponse({'error': 'Missing token or password'}, status=400)
+            
+        if len(new_password) < 8:
+            return JsonResponse({'error': 'Password must be at least 8 characters'}, status=400)
+            
+        # Call Supabase Auth API directly with the recovery token
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "apikey": settings.SUPABASE_ANON_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        resp = requests.put(
+            f"{settings.SUPABASE_URL}/auth/v1/user",
+            json={"password": new_password},
+            headers=headers,
+            timeout=10
+        )
+        resp.raise_for_status()
+        
+        return JsonResponse({'success': True, 'message': 'Password updated successfully'})
+        
+    except requests.exceptions.HTTPError as e:
+        error_msg = "Invalid or expired reset link. Please request a new one."
+        try:
+            error_data = e.response.json()
+            if "Token is expired" in error_data.get("message", ""):
+                error_msg = "Reset link has expired. Please request a new one."
+        except: pass
+        return JsonResponse({'error': error_msg}, status=401)
+    except Exception as e:
+        return JsonResponse({'error': 'An unexpected error occurred. Please try again.'}, status=500)
 
 # Middleware to track page views (optional but recommended)
 class AnalyticsMiddleware:
@@ -1883,3 +2704,79 @@ def seller_daily_sales_api(req):
         'datasets': datasets,
         'products': [{'id': pid, 'name': name} for pid, name in product_ids.items()]
     })
+
+
+def is_admin(user): return user.is_staff or user.is_superuser
+
+@login_required
+@user_passes_test(is_admin)
+@require_POST
+def approve_seller(request, seller_id):
+    seller = get_object_or_404(SellerProfile, id=seller_id, status='pending')
+    seller.status = 'approved'
+    seller.is_verified = True
+    seller.verified_at = timezone.now()
+    seller.save()
+    
+    # Clear related notifications
+    AdminNotification.objects.filter(link__contains=str(seller_id)).update(is_read=True)
+    messages.success(request, f"✅ '{seller.store_name}' has been approved.")
+    return redirect(request.META.get('HTTP_REFERER', 'store:admin_dashboard'))
+
+@login_required
+@user_passes_test(is_admin)
+@require_POST
+def reject_seller(request, seller_id):
+    seller = get_object_or_404(SellerProfile, id=seller_id, status='pending')
+    reason = request.POST.get('reason', 'No reason provided').strip()
+    
+    seller.status = 'rejected'
+    seller.is_verified = False
+    seller.rejected_reason = reason
+    seller.save()
+    
+    AdminNotification.objects.filter(link__contains=str(seller_id)).update(is_read=True)
+    messages.warning(request, f"❌ '{seller.store_name}' has been rejected.")
+    return redirect(request.META.get('HTTP_REFERER', 'store:admin_dashboard'))
+
+def is_admin(user): return user.is_staff or user.is_superuser
+
+@login_required
+@user_passes_test(is_admin)
+def mark_notifications_read(request):
+    AdminNotification.objects.filter(is_read=False).update(is_read=True)
+    return redirect(request.META.get('HTTP_REFERER', 'store:home'))
+
+
+def is_admin(user): return user.is_staff or user.is_superuser
+
+@login_required
+@user_passes_test(is_admin)
+def seller_application_detail(request, seller_id):
+    """Display seller application details with approve/reject actions"""
+    seller = get_object_or_404(SellerProfile, id=seller_id)
+    
+    # Mark this notification as read if it exists
+    AdminNotification.objects.filter(link__contains=f'seller/{seller_id}').update(is_read=True)
+    
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        reason = request.POST.get('reason', '').strip()
+        
+        if action == 'approve':
+            seller.status = 'approved'
+            seller.is_verified = True
+            seller.verified_at = timezone.now()
+            seller.save()
+            messages.success(request, f"✅ '{seller.store_name}' has been APPROVED. User is now a seller.")
+            
+        elif action == 'reject':
+            seller.status = 'rejected'
+            seller.is_verified = False
+            seller.rejected_reason = reason
+            seller.save()
+            messages.warning(request, f"❌ '{seller.store_name}' has been REJECTED.")
+        
+        return redirect('store:admin_dashboard')
+    
+    return render(request, 'store/seller_application_detail.html', {'seller': seller})
