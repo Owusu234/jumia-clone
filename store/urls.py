@@ -12,7 +12,7 @@ urlpatterns = [
     # path("complete-profile/", views.complete_profile, name="complete_profile"),
     path("api/regions/", views.get_regions_by_country, name="api_regions"),
     path('admin/notifications/read/', views.mark_notifications_read, name='mark_notifications_read'),
-   
+    path("api/chatbot/recommend/", views.chatbot_recommend, name="chatbot_recommend"),
     # ==================== CART (UUID Compatible) ====================
 
     path('cart/update/', views.update_cart, name='update_cart'),
