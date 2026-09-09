@@ -25,7 +25,7 @@ urlpatterns = [
     path('admin/seller/<int:seller_id>/approve/', views.approve_seller, name='approve_seller'),
     path('admin/seller/<int:seller_id>/reject/', views.reject_seller, name='reject_seller'),
     path('admin/seller/<int:seller_id>/application/', views.seller_application_detail, name='seller_application_detail'),
-   
+    path("api/chatbot/recommend/", views.chatbot_recommend, name="chatbot_recommend"),
     # ==================== PAYSTACK CHECKOUT & RECEIPTS ====================
 
     path("checkout/", views.checkout, name="checkout"),
