@@ -1,0 +1,137 @@
+{% extends "store/base.html" %}
+{% block title %}Admin Analytics | ShopVibe{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">📊 Admin Analytics</h2>
+    <a href="{% url 'store:admin_dashboard' %}" class="btn btn-outline-secondary">← Back to Dashboard</a>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-6"><div class="card text-center p-3"><h3 class="text-primary mb-0">{{ stats.users }}</h3><small class="text-muted">Total Users</small></div></div>
+    <div class="col-md-3 col-6"><div class="card text-center p-3"><h3 class="text-success mb-0">{{ stats.sellers }}</h3><small class="text-muted">Sellers</small></div></div>
+    <div class="col-md-3 col-6"><div class="card text-center p-3"><h3 class="text-info mb-0">{{ stats.products }}</h3><small class="text-muted">Products</small></div></div>
+    <div class="col-md-3 col-6"><div class="card text-center p-3"><h3 class="text-warning mb-0">{{ stats.orders }}</h3><small class="text-muted">Orders</small></div></div>
+    <div class="col-12"><div class="card text-center p-3"><h3 class="text-danger mb-0">GH₵{{ stats.revenue|floatformat:2 }}</h3><small class="text-muted">Total Revenue</small></div></div>
+</div>
+
+<!-- Revenue Chart -->
+<div class="card mb-4">
+    <div class="card-header fw-bold">📈 Monthly Revenue & Orders</div>
+    <div class="card-body">
+        <canvas id="revenueChart" height="100"></canvas>
+    </div>
+</div>
+
+<!-- Top Products -->
+<div class="card mb-4">
+    <div class="card-header fw-bold">🏆 Top Selling Products</div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead><tr><th>Product</th><th>Units Sold</th><th>Revenue</th></tr></thead>
+                <tbody>
+                    {% for item in top_products %}
+                    <tr><td>{{ item.product__name }}</td><td>{{ item.total_sold }}</td><td>GH₵{{ item.revenue|floatformat:2 }}</td></tr>
+                    {% empty %}<tr><td colspan="3" class="text-center text-muted">No sales data yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Orders -->
+<div class="card mb-4">
+    <div class="card-header fw-bold">🕒 Recent Orders</div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
+                <tbody>
+                    {% for order in recent_orders %}
+                    <tr>
+                        <td><a href="{% url 'store:order_receipt' order.id %}" target="_blank">#{{ order.id }}</a></td>
+                        <td>{{ order.user.username }}</td>
+                        <td>GH₵{{ order.total|floatformat:2 }}</td>
+                        <td><span class="badge bg-{{ order.status|lower }}">{{ order.status }}</span></td>
+                        <td>{{ order.created_at|date:"M d, Y" }}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="5" class="text-center text-muted">No recent orders</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Seller Performance -->
+<div class="card">
+    <div class="card-header fw-bold">🏪 Top Sellers</div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead><tr><th>Seller</th><th>Products</th><th>Orders</th><th>Sales</th></tr></thead>
+                <tbody>
+                    {% for seller in seller_stats %}
+                    <tr><td>{{ seller.store_name }}</td><td>{{ seller.product_count }}</td><td>{{ seller.order_count }}</td><td>GH₵{{ seller.total_sales|floatformat:2|default:"0.00" }}</td></tr>
+                    {% empty %}<tr><td colspan="4" class="text-center text-muted">No seller data yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ HIDDEN DATA CONTAINER (Fixes JS Linter Errors) -->
+<div id="chart-data"
+     data-months='{{ chart_data.months }}'
+     data-revenues='{{ chart_data.revenues }}'
+     data-order-counts='{{ chart_data.order_counts }}'
+     style="display:none;"></div>
+
+<!-- Chart.js Script -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Read data from DOM to avoid linter errors in JS blocks
+    const chartDataEl = document.getElementById('chart-data');
+    
+    const months = JSON.parse(chartDataEl.dataset.months);
+    const revenues = JSON.parse(chartDataEl.dataset.revenues);
+    const orderCounts = JSON.parse(chartDataEl.dataset.orderCounts);
+
+    const ctx = document.getElementById('revenueChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: months,
+            datasets: [{
+                label: 'Revenue (GH₵)',
+                data: revenues,
+                borderColor: '#f68b1e',
+                backgroundColor: 'rgba(246, 139, 30, 0.1)',
+                tension: 0.3,
+                fill: true
+            }, {
+                label: 'Orders',
+                data: orderCounts,
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                tension: 0.3,
+                fill: true,
+                yAxisID: 'y1'
+            }]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: 'Revenue (GH₵)' } },
+                y1: { beginAtZero: true, position: 'right', title: { display: true, text: 'Orders' }, grid: { drawOnChartArea: false } }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

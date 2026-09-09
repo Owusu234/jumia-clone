@@ -1,0 +1,249 @@
+{% extends "store/base.html" %}
+{% load static %}
+{% block title %}Analytics Dashboard | ShopVibe{% endblock %}
+{% block content %}
+<style>
+    .analytics-card { 
+        background: var(--card); 
+        border: 1px solid var(--border); 
+        border-radius: 12px; 
+        padding: 20px; 
+        margin-bottom: 20px; 
+    }
+    .metric-value { font-size: 2rem; font-weight: 700; color: var(--p); }
+    .metric-label { color: var(--muted); font-size: 0.9rem; }
+    .chart-container { position: relative; height: 300px; }
+    .last-updated { font-size: 0.8rem; color: var(--muted); text-align: right; }
+    .refresh-btn { 
+        background: var(--p); 
+        color: white; 
+        border: none; 
+        padding: 6px 12px; 
+        border-radius: 6px; 
+        cursor: pointer; 
+        font-size: 0.85rem;
+    }
+    .refresh-btn:hover { opacity: 0.9; }
+    .refresh-btn:disabled { background: var(--border); cursor: not-allowed; }
+</style>
+
+<div class="container-fluid px-3 px-md-4 py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold mb-0">📊 Analytics Dashboard</h2>
+        <div class="d-flex align-items-center gap-2">
+            <span class="last-updated" id="lastUpdated">Last updated: --</span>
+            <button class="refresh-btn" onclick="refreshData()" id="refreshBtn">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Key Metrics Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="analytics-card text-center">
+                <div class="metric-value" id="revenueToday">GH₵0.00</div>
+                <div class="metric-label">Revenue Today</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="analytics-card text-center">
+                <div class="metric-value" id="ordersToday">0</div>
+                <div class="metric-label">Orders Today</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="analytics-card text-center">
+                <div class="metric-value" id="newUsers">0</div>
+                <div class="metric-label">New Users Today</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="analytics-card text-center">
+                <div class="metric-value" id="pageViews">0</div>
+                <div class="metric-label">Page Views (1h)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row g-3 mb-4">
+        <!-- Hourly Sales Chart -->
+        <div class="col-lg-8">
+            <div class="analytics-card">
+                <h5 class="fw-bold mb-3">📈 Sales Last 24 Hours</h5>
+                <div class="chart-container">
+                    <canvas id="hourlySalesChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Top Products -->
+        <div class="col-lg-4">
+            <div class="analytics-card">
+                <h5 class="fw-bold mb-3">🔥 Top Products (7 Days)</h5>
+                <div id="topProductsList" class="list-group list-group-flush">
+                    <div class="text-center text-muted py-4">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Weekly Overview -->
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="analytics-card">
+                <h5 class="fw-bold mb-3">📦 Weekly Orders</h5>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="metric-value" id="ordersWeek">0</div>
+                        <div class="metric-label">Total Orders</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="metric-value" id="revenueWeek">GH₵0.00</div>
+                        <div class="metric-label">Total Revenue</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="analytics-card">
+                <h5 class="fw-bold mb-3">👥 User Growth</h5>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="metric-value" id="totalUsers">0</div>
+                        <div class="metric-label">Total Users</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="metric-value text-success" id="revenueMonth">GH₵0.00</div>
+                        <div class="metric-label">Monthly Revenue</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+<script>
+// Global variables
+let hourlyChart = null;
+let refreshInterval = null;
+
+// Initialize dashboard
+document.addEventListener('DOMContentLoaded', function() {
+    initChart();
+    refreshData();
+    // Auto-refresh every 30 seconds
+    refreshInterval = setInterval(refreshData, 30000);
+});
+
+// Initialize Chart.js
+function initChart() {
+    const ctx = document.getElementById('hourlySalesChart').getContext('2d');
+    hourlyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Sales (GH₵)',
+                data: [],
+                borderColor: '#f68b1e',
+                backgroundColor: 'rgba(246, 139, 30, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    ticks: { 
+                        callback: value => 'GH₵' + value,
+                        color: getComputedStyle(document.body).getPropertyValue('--tx')
+                    }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: getComputedStyle(document.body).getPropertyValue('--tx') }
+                }
+            }
+        }
+    });
+}
+
+// Fetch and update analytics data
+async function refreshData() {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Updating...';
+    
+    try {
+        const response = await fetch('{% url "store:analytics_api" %}');
+        const data = await response.json();
+        
+        // Update metrics
+        document.getElementById('revenueToday').textContent = 'GH₵' + data.revenue.today.toFixed(2);
+        document.getElementById('ordersToday').textContent = data.orders.today;
+        document.getElementById('newUsers').textContent = data.users.new_today;
+        document.getElementById('pageViews').textContent = data.page_views_last_hour;
+        document.getElementById('ordersWeek').textContent = data.orders.week;
+        document.getElementById('revenueWeek').textContent = 'GH₵' + data.revenue.week.toFixed(2);
+        document.getElementById('totalUsers').textContent = data.users.total;
+        document.getElementById('revenueMonth').textContent = 'GH₵' + data.revenue.month.toFixed(2);
+        
+        // Update chart
+        if (hourlyChart) {
+            hourlyChart.data.labels = data.hourly_sales.map(h => h.hour);
+            hourlyChart.data.datasets[0].data = data.hourly_sales.map(h => h.sales);
+            hourlyChart.update('none'); // Smooth update
+        }
+        
+        // Update top products
+        const productsList = document.getElementById('topProductsList');
+        if (data.top_products.length > 0) {
+            productsList.innerHTML = data.top_products.map((p, i) => `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#${i+1} ${p.product__name}</strong>
+                        <div class="small text-muted">${p.total_sold} sold</div>
+                    </div>
+                    <span class="badge bg-primary rounded-pill">GH₵${p.revenue?.toFixed(2) || 0}</span>
+                </div>
+            `).join('');
+        } else {
+            productsList.innerHTML = '<div class="text-center text-muted py-4">No sales data yet</div>';
+        }
+        
+        // Update timestamp
+        const now = new Date();
+        document.getElementById('lastUpdated').textContent = 
+            'Last updated: ' + now.toLocaleTimeString();
+            
+    } catch (error) {
+        console.error('Analytics fetch error:', error);
+        document.getElementById('lastUpdated').textContent = 'Error loading data';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh';
+    }
+}
+
+// Manual refresh
+window.refreshData = refreshData;
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) clearInterval(refreshInterval);
+});
+</script>
+{% endblock %}

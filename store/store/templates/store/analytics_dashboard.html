@@ -1,0 +1,508 @@
+{% extends "store/base.html" %}
+{% block title %}Analytics Dashboard | ShopVibe{% endblock %}
+
+{% block content %}
+<style>
+    /* ── Theme Integration ── */
+    :root {
+        --card-bg: var(--card);
+        --text: var(--tx);
+        --border: var(--border);
+        --muted: var(--muted);
+        --primary: var(--p);
+        --success: #10b981;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+    }
+    
+    /* Metric Cards */
+    .metric-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+    .metric-value { font-size: 2rem; font-weight: 800; color: var(--primary); line-height: 1; }
+    .metric-label { color: var(--muted); font-size: 0.9rem; margin-top: 8px; }
+    .metric-change { font-size: 0.8rem; margin-top: 4px; }
+    .change-up { color: var(--success); }
+    .change-down { color: var(--danger); }
+    
+    /* Charts */
+    .chart-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        height: 100%;
+    }
+    .chart-container { position: relative; height: 300px; width: 100%; }
+    
+    /* Table */
+    .data-table th { 
+        font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; 
+        color: var(--muted); font-weight: 700; border-bottom: 2px solid var(--border); 
+    }
+    .data-table td { vertical-align: middle; color: var(--text); border-bottom: 1px solid var(--border); }
+    .product-name { font-weight: 600; }
+    .revenue-badge { 
+        background: rgba(16,185,129,0.15); color: var(--success); 
+        padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; 
+    }
+    
+    /* Utilities */
+    .last-updated { font-size: 0.8rem; color: var(--muted); }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .metric-value { font-size: 1.5rem; }
+        .chart-container { height: 250px; }
+    }
+</style>
+
+<div class="container-fluid px-3 px-md-4 py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div>
+            <h2 class="fw-bold mb-1">📊 Analytics Dashboard</h2>
+            <p class="text-muted mb-0">Real-time insights for your store</p>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <span class="last-updated" id="lastUpdated">Loading...</span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="refreshDashboard()">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row g-3 mb-4">
+        <!-- Orders Today -->
+        <div class="col-6 col-md-3">
+            <div class="metric-card text-center">
+                <i class="bi bi-bag-check-fill" style="font-size: 1.5rem; color: var(--primary);"></i>
+                <div class="metric-value mt-2" id="ordersToday">{{ orders_today }}</div>
+                <div class="metric-label">Orders Today</div>
+                <div class="metric-change change-up">
+                    <i class="bi bi-arrow-up-short"></i>Live
+                </div>
+            </div>
+        </div>
+        
+        <!-- Revenue Today -->
+        <div class="col-6 col-md-3">
+            <div class="metric-card text-center">
+                <i class="bi bi-currency-dollar" style="font-size: 1.5rem; color: var(--success);"></i>
+                <div class="metric-value mt-2" id="revenueToday">GH₵{{ revenue_today|floatformat:2 }}</div>
+                <div class="metric-label">Revenue Today</div>
+                <div class="metric-change change-up">
+                    <i class="bi bi-arrow-up-short"></i>Real-time
+                </div>
+            </div>
+        </div>
+        
+        <!-- New Users -->
+        <div class="col-6 col-md-3">
+            <div class="metric-card text-center">
+                <i class="bi bi-people-fill" style="font-size: 1.5rem; color: var(--warning);"></i>
+                <div class="metric-value mt-2">{{ new_users_today }}</div>
+                <div class="metric-label">New Users Today</div>
+                <div class="metric-change">
+                    Since midnight
+                </div>
+            </div>
+        </div>
+        
+        <!-- Page Views -->
+        <div class="col-6 col-md-3">
+            <div class="metric-card text-center">
+                <i class="bi bi-eye-fill" style="font-size: 1.5rem; color: var(--danger);"></i>
+                <div class="metric-value mt-2">{{ page_views_today }}</div>
+                <div class="metric-label">Page Views Today</div>
+                <div class="metric-change">
+                    All pages
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 🔔 PENDING SELLER APPLICATIONS -->
+    <div id="pending-applications" class="row g-3 mb-4 scroll-mt-5">
+        <div class="col-12">
+            <div class="analytics-card">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">⏳ Pending Seller Applications</h5>
+                    <span class="badge bg-warning text-dark">{{ pending_sellers|length }} pending</span>
+                </div>
+
+                {% if pending_sellers %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Store</th>
+                                <th>Applicant</th>
+                                <th>Contact</th>
+                                <th>Applied</th>
+                                <th style="width:140px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for seller in pending_sellers %}
+                            <tr>
+                                <td><strong>{{ seller.store_name }}</strong></td>
+                                <td>{{ seller.user.get_full_name|default:seller.user.username }}</td>
+                                <td>
+                                    <div class="small">{{ seller.user.email }}</div>
+                                    <div class="small text-muted">{{ seller.phone }}</div>
+                                </td>
+                                <td><small class="text-muted">{{ seller.created_at|timesince }} ago</small></td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <!-- ✅ Approve -->
+                                        <form method="post" action="{% url 'store:approve_seller' seller.id %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-success" title="Approve">
+                                                <i class="bi bi-check-lg"></i>
+                                            </button>
+                                        </form>
+                                        
+                                        <!-- ❌ Reject (triggers modal) -->
+                                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#rejectModal{{ seller.id }}" title="Reject">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Reject Modal -->
+                                    <div class="modal fade" id="rejectModal{{ seller.id }}" tabindex="-1">
+                                        <div class="modal-dialog modal-sm modal-dialog-centered">
+                                            <div class="modal-content">
+                                                <form method="post" action="{% url 'store:reject_seller' seller.id %}">
+                                                    {% csrf_token %}
+                                                    <div class="modal-header">
+                                                        <h6 class="modal-title fw-bold">Reject Application</h6>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p class="small text-muted mb-2">Reason (visible to applicant):</p>
+                                                        <textarea name="reason" class="form-control form-control-sm" rows="3" placeholder="e.g., Incomplete info, policy violation..."></textarea>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-sm btn-danger">Confirm Reject</button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox fs-3"></i>
+                        <p class="mb-0 small mt-2">No pending applications</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <!-- Charts Row -->
+    <div class="row g-3 mb-4">
+        <!-- Hourly Sales Chart -->
+        <div class="col-lg-8">
+            <div class="chart-card">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">📈 Sales Last 24 Hours</h5>
+                    <span class="badge bg-light text-dark border">Hourly</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="hourlyChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Daily Sales Chart -->
+        <div class="col-lg-4">
+            <div class="chart-card">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">📊 This Week</h5>
+                    <span class="badge bg-light text-dark border">Daily</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="dailyChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Products -->
+    <div class="chart-card mb-4">
+        <h5 class="fw-bold mb-3">🏆 Top Products This Week</h5>
+        {% if top_products %}
+        <div class="table-responsive">
+            <table class="table data-table mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">Product</th>
+                        <th class="text-end">Units Sold</th>
+                        <th class="text-end">Revenue</th>
+                        <th class="text-end" style="width: 80px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in top_products %}
+                    <tr>
+                        <td class="ps-3 product-name">{{ p.product__name }}</td>
+                        <td class="text-end fw-bold">{{ p.sold }}</td>
+                        <td class="text-end">
+                            <span class="revenue-badge">GH₵{{ p.revenue|floatformat:2 }}</span>
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'store:product_detail' p.product__id %}" class="btn btn-sm btn-outline-primary">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-graph-up-arrow" style="font-size: 3rem; opacity: 0.3;"></i>
+            <p class="mt-2">No sales data yet this week</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Chart.js + Dashboard Logic -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+<script>
+(function() {
+    'use strict';
+    
+    // Theme-aware color helper
+    function getThemeColors() {
+        const cs = getComputedStyle(document.documentElement);
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+                       document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        return {
+            text: cs.getPropertyValue('--text').trim() || (isDark ? '#f1f5f9' : '#212529'),
+            border: cs.getPropertyValue('--border').trim() || (isDark ? '#374151' : '#dee2e6'),
+            primary: cs.getPropertyValue('--primary').trim() || '#f68b1e',
+            success: cs.getPropertyValue('--success').trim() || '#10b981',
+            bg: cs.getPropertyValue('--card-bg').trim() || (isDark ? '#1e293b' : '#ffffff'),
+            grid: (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)')
+        };
+    }
+    
+    // Initialize hourly chart
+    function initHourlyChart(labels, revenueData, orderData) {
+        const ctx = document.getElementById('hourlyChart').getContext('2d');
+        const t = getThemeColors();
+        
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Revenue (GH₵)',
+                    data: revenueData,
+                    borderColor: t.primary,
+                    backgroundColor: t.primary + '22',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true,
+                    yAxisID: 'y'
+                }, {
+                    label: 'Orders',
+                    data: orderData,
+                    borderColor: t.success,
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 3,
+                    yAxisID: 'y1'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { color: t.text } },
+                    tooltip: {
+                        backgroundColor: t.bg,
+                        titleColor: t.text,
+                        bodyColor: t.text,
+                        borderColor: t.border,
+                        borderWidth: 1,
+                        callbacks: {
+                            label: ctx => ctx.dataset.label === 'Revenue (GH₵)' 
+                                ? ` GH₵${ctx.parsed.y.toFixed(2)}` 
+                                : ` ${ctx.parsed.y} orders`
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        ticks: { color: t.text, font: { size: 10 } }, 
+                        grid: { color: t.grid } 
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        ticks: { color: t.text, callback: v => `GH₵${v}` },
+                        grid: { color: t.grid }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        ticks: { color: t.success },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Initialize daily chart
+    function initDailyChart(labels, revenueData) {
+        const ctx = document.getElementById('dailyChart').getContext('2d');
+        const t = getThemeColors();
+        
+        return new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Revenue (GH₵)',
+                    data: revenueData,
+                    backgroundColor: t.primary + '33',
+                    borderColor: t.primary,
+                    borderWidth: 2,
+                    borderRadius: 6,
+                    hoverBackgroundColor: t.primary
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: t.bg,
+                        titleColor: t.text,
+                        bodyColor: t.text,
+                        borderColor: t.border,
+                        borderWidth: 1,
+                        callbacks: { label: ctx => ` GH₵${ctx.parsed.y.toFixed(2)}` }
+                    }
+                },
+                scales: {
+                    x: { 
+                        ticks: { color: t.text, font: { size: 10 } }, 
+                        grid: { color: t.grid } 
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: t.text, callback: v => `GH₵${v}` },
+                        grid: { color: t.grid }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Update metrics via API
+    function refreshMetrics() {
+        fetch("{% url 'store:analytics_api' %}")
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('ordersToday').textContent = data.orders_today;
+                document.getElementById('revenueToday').textContent = 
+                    'GH₵' + parseFloat(data.revenue_today).toFixed(2);
+                document.getElementById('lastUpdated').textContent = 
+                    'Updated: ' + new Date(data.timestamp).toLocaleTimeString();
+            })
+            .catch(err => console.warn('Metrics sync failed:', err));
+    }
+    
+    // Full dashboard refresh
+    window.refreshDashboard = function() {
+        refreshMetrics();
+        // Could also refresh charts via API if needed
+    };
+    
+    // Theme change observer
+    const themeObserver = new MutationObserver(() => {
+        if (window.hourlyChart) {
+            const t = getThemeColors();
+            hourlyChart.options.plugins.tooltip.backgroundColor = t.bg;
+            hourlyChart.options.plugins.tooltip.titleColor = t.text;
+            hourlyChart.options.plugins.tooltip.bodyColor = t.text;
+            hourlyChart.options.scales.x.ticks.color = t.text;
+            hourlyChart.options.scales.y.ticks.color = t.text;
+            hourlyChart.options.scales.x.grid.color = t.grid;
+            hourlyChart.options.scales.y.grid.color = t.grid;
+            hourlyChart.data.datasets[0].borderColor = t.primary;
+            hourlyChart.data.datasets[0].backgroundColor = t.primary + '22';
+            hourlyChart.data.datasets[1].borderColor = t.success;
+            hourlyChart.update('none');
+        }
+        if (window.dailyChart) {
+            const t = getThemeColors();
+            dailyChart.options.plugins.tooltip.backgroundColor = t.bg;
+            dailyChart.options.plugins.tooltip.titleColor = t.text;
+            dailyChart.options.plugins.tooltip.bodyColor = t.text;
+            dailyChart.options.scales.x.ticks.color = t.text;
+            dailyChart.options.scales.y.ticks.color = t.text;
+            dailyChart.options.scales.x.grid.color = t.grid;
+            dailyChart.options.scales.y.grid.color = t.grid;
+            dailyChart.data.datasets[0].backgroundColor = t.primary + '33';
+            dailyChart.data.datasets[0].borderColor = t.primary;
+            dailyChart.update('none');
+        }
+    });
+    
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get data from Django template
+        const hourlyLabels = {{ hourly_labels|safe }};
+        const hourlyRevenue = {{ hourly_revenue|safe }};
+        const hourlyOrders = {{ hourly_orders|safe }};
+        const dailyLabels = {{ daily_labels|safe }};
+        const dailyRevenue = {{ daily_revenue|safe }};
+        
+        // Render charts
+        window.hourlyChart = initHourlyChart(hourlyLabels, hourlyRevenue, hourlyOrders);
+        window.dailyChart = initDailyChart(dailyLabels, dailyRevenue);
+        
+        // Set initial timestamp
+        document.getElementById('lastUpdated').textContent = 
+            'Updated: {% now "H:i:s" %}';
+        
+        // Start live polling (every 30 seconds)
+        refreshMetrics();
+        setInterval(refreshMetrics, 30000);
+        
+        // Watch for theme changes
+        themeObserver.observe(document.documentElement, { 
+            attributes: true, 
+            attributeFilter: ['data-theme', 'data-bs-theme', 'class'] 
+        });
+    });
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        themeObserver.disconnect();
+    });
+})();
+</script>
+{% endblock %}

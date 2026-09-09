@@ -126,7 +126,31 @@ WHITENOISE_ROOT = os.path.join(BASE_DIR, "staticfiles")  # ✅ Explicit root for
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
-LOGIN_URL = "login"
+# ⚠️ "login" isn't a valid reverse() target on its own — the actual URL name is
+# namespaced as "store:login" (store/urls.py sets app_name = "store"). Left as
+# "login", @login_required's redirect (used by upload_product, cart, and the
+# new shared-cart invite views) can't resolve the login page correctly.
+LOGIN_URL = "store:login"
 LOGIN_REDIRECT_URL = "store:home"
 LOGOUT_REDIRECT_URL = "store:home"
 
+# ✅ EMAIL: required for the shared-cart invite feature (store/views.py:invite_to_cart
+# uses django.core.mail.send_mail). Nothing sent this before — password resets go
+# through Supabase's own email service, not Django. Falls back to printing emails
+# to the console in DEBUG so local dev doesn't need real credentials.
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "ShopVibe <no-reply@shopvibe.up.railway.app>")
+
+# Note (not fatal): if EMAIL_HOST_USER/EMAIL_HOST_PASSWORD aren't set in production,
+# cart invite emails will fail — invite_to_cart already catches that and shows the
+# user an error message rather than crashing, so this doesn't need a fail-fast check.
+if not DEBUG and not all([EMAIL_HOST_USER, EMAIL_HOST_PASSWORD]):
+    print("⚠️ EMAIL_HOST_USER / EMAIL_HOST_PASSWORD not set — cart invite emails will fail until configured.")

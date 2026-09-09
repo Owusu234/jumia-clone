@@ -1,0 +1,124 @@
+{% extends "store/base.html" %}
+{% block title %}Order #{{ order.id }} Receipt | ShopVibe{% endblock %}
+
+{% block content %}
+<style>
+    .receipt-wrap {
+        max-width: 800px; margin: 40px auto; background: var(--card);
+        border: 1px solid var(--border); border-radius: 12px; padding: 30px;
+        color: var(--tx);
+    }
+    .receipt-header { border-bottom: 2px dashed var(--border); padding-bottom: 20px; margin-bottom: 20px; }
+    .receipt-section { margin-bottom: 24px; }
+    .receipt-table th { text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
+    .receipt-table td { vertical-align: middle; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .receipt-table tr:last-child td { border-bottom: none; }
+    .total-row td { border-top: 2px solid var(--border); font-weight: 700; font-size: 1.1rem; padding-top: 14px; }
+    .payment-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+    .tx-ref { font-family: ui-monospace, monospace; font-size: 0.85rem; color: var(--muted); word-break: break-all; }
+    
+    @media print {
+        body, .receipt-wrap { background: #fff !important; color: #000 !important; border: none !important; box-shadow: none !important; }
+        .no-print { display: none !important; }
+        .receipt-header { border-bottom: 2px solid #000; }
+        .receipt-table td, .receipt-table th { border-color: #ddd; }
+    }
+</style>
+
+<div class="receipt-wrap">
+    <!-- Header -->
+    <div class="receipt-header d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+            <h3 class="fw-bold mb-1">🧾 Order Receipt</h3>
+            <p class="text-muted mb-0">Order #{{ order.id }}</p>
+        </div>
+        <div class="text-end">
+            <span class="badge bg-{% if order.payment_status == 'paid' %}success{% else %}warning{% endif %}">
+                {{ order.payment_status|upper }}
+            </span>
+            <p class="small text-muted mt-2 mb-0">{{ order.created_at|date:"M d, Y h:i A" }}</p>
+        </div>
+    </div>
+
+    <!-- Customer Info -->
+    <div class="receipt-section">
+        <h6 class="fw-bold mb-2">👤 Customer</h6>
+        <p class="mb-1">{{ order.user.get_full_name|default:order.user.username }}</p>
+        <p class="text-muted mb-0">{{ order.user.email }}</p>
+    </div>
+
+    <!-- Items -->
+    <div class="receipt-section">
+        <h6 class="fw-bold mb-3">📦 Items</h6>
+        <table class="table receipt-table mb-0">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Price</th>
+                    <th class="text-end">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in order.items.all %}
+                <tr>
+                    <td class="fw-medium">{{ item.product.name }}</td>
+                    <td class="text-end">{{ item.quantity }}</td>
+                    <td class="text-end">GH₵{{ item.price|floatformat:2 }}</td>
+                    <td class="text-end fw-bold">GH₵{{ item.subtotal|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Totals -->
+    <div class="receipt-section">
+        <table class="table receipt-table mb-0">
+            <tbody>
+                <tr>
+                    <td class="text-muted">Subtotal</td>
+                    <td class="text-end">GH₵{{ order.total_amount|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Shipping</td>
+                    <td class="text-end text-success">Free</td>
+                </tr>
+                <tr class="total-row">
+                    <td>Total Paid</td>
+                    <td class="text-end" style="color: var(--p);">GH₵{{ order.total_amount|floatformat:2 }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Payment Info -->
+    <div class="payment-box">
+        <h6 class="fw-bold mb-2">💳 Payment Details</h6>
+        <div class="row small g-2">
+            <div class="col-6 col-md-3">
+                <span class="text-muted d-block">Method</span>
+                {{ order.payment_method|default:"Paystack"|title }}
+            </div>
+            <div class="col-6 col-md-5">
+                <span class="text-muted d-block">Transaction Reference</span>
+                <span class="tx-ref">{{ order.reference }}</span>
+            </div>
+            <div class="col-6 col-md-4 text-md-end">
+                <span class="text-muted d-block">Date</span>
+                {{ order.created_at|date:"M d, Y" }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="mt-4 text-center no-print d-flex justify-content-center gap-3">
+        <button onclick="window.print()" class="btn btn-primary px-4">
+            <i class="bi bi-printer me-1"></i>Print Receipt
+        </button>
+        <a href="{% url 'store:user_orders' %}" class="btn btn-outline-secondary px-4">
+            <i class="bi bi-arrow-left me-1"></i>Back to Orders
+        </a>
+    </div>
+</div>
+{% endblock %}

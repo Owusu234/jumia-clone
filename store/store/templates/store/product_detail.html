@@ -1,0 +1,624 @@
+{% extends "store/base.html" %}
+{% block title %}{{ product.name }} | ShopVibe{% endblock %}
+
+{% block content %}
+{% if product.vr_model_url %}
+{% if product.vr_type == "3d_model" %}
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+{% endif %}
+{% endif %}
+<div class="container-fluid px-3 px-md-4 py-2"> 
+    <!-- Back Button -->
+    <div class="back-nav mb-3">
+        <a href="#" 
+           onclick="if(window.history.length > 1) { window.history.back(); } else { window.location.href='{% url 'store:home' %}'; } return false;" 
+           class="btn-back d-inline-flex align-items-center gap-2">
+            <i class="bi bi-arrow-left"></i>
+            <span>Back</span>
+        </a>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- Image Section -->
+        <div class="col-lg-6">
+            <div id="view-photo" class="product-image-container bg-white rounded border border-theme p-3" 
+                style="min-height: 400px; display: flex; align-items: center; justify-content: center;">
+                <img src="{{ product.get_image }}" 
+                    alt="{{ product.name }}" 
+                    class="img-fluid"
+                    style="max-height: 500px; object-fit: contain;"
+                    onerror="this.src='https://via.placeholder.com/600?text=No+Image'">
+            </div>
+
+            {% if product.vr_model_url %}
+            <!-- VR toggle buttons -->
+            <div class="d-flex gap-2 mt-2">
+                <button id="btn-photo" class="btn btn-outline-secondary btn-sm flex-fill" onclick="switchView('photo')">
+                    <i class="bi bi-image me-1"></i> Photo
+                </button>
+                <button id="btn-vr" class="btn btn-primary btn-sm flex-fill" onclick="switchView('vr')">
+                    <i class="bi bi-badge-vr me-1"></i> {% if product.vr_type == "3d_model" %}🧊 View in 3D{% else %}🌐 View 360°{% endif %}
+                </button>
+            </div>
+
+            <!-- VR Panel -->
+            <div id="view-vr" style="display:none;" class="mt-2">
+
+                {% if product.vr_type == "3d_model" %}
+                <!-- 3D Model Viewer -->
+                <model-viewer
+                    id="product-model-viewer"
+                    src="{{ product.vr_model_url }}"
+                    alt="{{ product.name }} 3D model"
+                    ar
+                    ar-modes="webxr scene-viewer quick-look"
+                    ar-scale="auto"
+                    auto-rotate
+                    auto-rotate-delay="0"
+                    rotation-per-second="30deg"
+                    camera-controls
+                    touch-action="pan-y"
+                    shadow-intensity="1"
+                    shadow-softness="0.3"
+                    exposure="1"
+                    tone-mapping="commerce"
+                    style="width:100%;height:460px;border-radius:12px;border:1px solid var(--border);background:#e8e8e8;">
+                    <div slot="progress-bar" style="display:none;"></div>
+                    <div slot="poster"
+                        style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:#f0f0f0;border-radius:12px;">
+                        <div style="text-align:center;">
+                            <div class="spinner-border text-primary mb-2" role="status"></div>
+                            <div class="text-muted small">Loading 3D model...</div>
+                        </div>
+                    </div>
+                </model-viewer>
+                <!-- 3D Controls -->
+                <div class="d-flex gap-2 mt-2 justify-content-center flex-wrap">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('product-model-viewer').resetTurntableRotation()">
+                        <i class="bi bi-arrow-repeat me-1"></i>Reset
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleAutoRotate()">
+                        <i class="bi bi-pause-circle me-1" id="rotate-icon"></i><span id="rotate-label">Pause</span>
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="tryAR()">
+                        📱 View in AR
+                    </button>
+                </div>
+                <div id="ar-notice" class="alert alert-warning py-2 px-3 mt-2 text-center" style="display:none;font-size:0.875rem;"></div>
+
+                {% else %}
+                <!-- 360° Photo Viewer -->
+                <div style="width:100%;height:460px;border-radius:12px;border:1px solid var(--border);overflow:hidden;position:relative;" id="viewer360">
+                    <img id="img360"
+                        src="{{ product.vr_model_url }}"
+                        style="width:100%;height:100%;object-fit:cover;cursor:grab;user-select:none;"
+                        draggable="false"
+                        alt="360 view">
+                    <div style="position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.45);color:rgba(255,255,255,0.85);font-size:0.72rem;padding:3px 12px;border-radius:20px;pointer-events:none;">
+                        <i class="bi bi-hand-index-thumb me-1"></i>Drag to pan the 360° view
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="text-center mt-1">
+                    <small class="text-muted">
+                        {% if product.vr_type == "3d_model" %}
+                        <i class="bi bi-hand-index-thumb me-1"></i>Drag to rotate · Scroll to zoom · Pinch on mobile
+                        {% else %}
+                        <i class="bi bi-hand-index-thumb me-1"></i>Drag left/right to look around
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Product Info -->
+        <div class="col-lg-6">
+            <h1 class="fw-bold mb-2">{{ product.name }}</h1>
+            <p class="text-muted mb-3">
+                <i class="bi bi-shop me-1"></i>
+                <a href="#" class="text-decoration-none">{{ product.seller.store_name }}</a>
+            </p>
+            
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <span class="fs-4 fw-bold text-primary">GH₵{{ product.price }}</span>
+                {% if product.stock > 10 %}
+                    <span class="badge bg-success-subtle text-success">In Stock</span>
+                {% elif product.stock > 0 %}
+                    <span class="badge bg-warning-subtle text-warning">Low: {{ product.stock }}</span>
+                {% else %}
+                    <span class="badge bg-danger-subtle text-danger">Out of Stock</span>
+                {% endif %}
+            </div>
+            
+            <p class="mb-3">{{ product.description|truncatewords:20 }}</p>
+            
+            <div class="d-grid gap-2">
+                {% if product.stock > 0 %}
+                <a href="{% url 'store:add_to_cart' product.id %}" class="btn btn-primary btn-lg">
+                    <i class="bi bi-cart-plus me-2"></i>Add to Cart
+                </a>
+                {% endif %}
+                
+                <!-- WhatsApp Contact Section -->
+                <div class="mt-4">
+                    {% if whatsapp_available and whatsapp_number %}
+                        <a href="https://wa.me/{{ whatsapp_number|cut:'+' }}?text=Hello%20{{ seller.store_name|default:'Seller' }},%20I'm%20interested%20in%20{{ product.name }}%20(GH%C2%A2{{ product.price }})" 
+                        class="btn btn-success btn-lg w-100 d-flex align-items-center justify-content-center gap-2"
+                        target="_blank" 
+                        rel="noopener noreferrer">
+                            <i class="bi bi-whatsapp fs-4"></i>
+                            <div class="text-start">
+                                <div class="fw-bold">Chat on WhatsApp</div>
+                                <small class="opacity-75">{{ whatsapp_number }}</small>
+                            </div>
+                        </a>
+                        <small class="text-muted d-block mt-2 text-center">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Seller is available on WhatsApp
+                        </small>
+                    {% else %}
+                        <button class="btn btn-secondary btn-lg w-100 d-flex align-items-center justify-content-center gap-2" disabled>
+                            <i class="bi bi-whatsapp fs-4"></i>
+                            <div class="text-start">
+                                <div class="fw-bold">WhatsApp Unavailable</div>
+                                <small class="opacity-75">Seller hasn't added WhatsApp number</small>
+                            </div>
+                        </button>
+                        <small class="text-muted d-block mt-2 text-center">
+                            <i class="bi bi-exclamation-circle"></i> 
+                            Use other contact methods
+                        </small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- You May Also Like -->
+    {% if related_products %}
+    <div class="row mt-5 pt-4 border-top">
+        <h4 class="fw-bold mb-4">🔥 You May Also Like</h4>
+        {% for rp in related_products %}
+        <div class="col-6 col-md-3 mb-3">
+            <div class="related-card">
+                <a href="{% url 'store:product_detail' rp.slug %}">
+                    <div class="related-img-wrapper">
+                        <img src="{{ rp.get_image }}" class="related-img" alt="{{ rp.name }}">
+                    </div>
+                </a>
+                <div class="related-card-body">
+                    <div class="related-info">
+                        <a href="{% url 'store:product_detail' rp.slug %}" class="text-decoration-none">
+                            <h6 class="related-title">{{ rp.name|truncatechars:30 }}</h6>
+                        </a>
+                        <div class="related-price">GH₵{{ rp.price }}</div>
+                    </div>
+                    <div class="related-actions">
+                        {% if rp.stock > 0 %}
+                        <a href="{% url 'store:add_to_cart' rp.id %}" class="btn btn-outline-primary btn-add-related">Add</a>
+                        {% else %}
+                        <button class="btn btn-secondary btn-add-related" disabled>Out of Stock</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ✅ REVIEWS SECTION: Display + Submit -->
+    {% if user.is_authenticated %}
+    <div class="card border-theme bg-card p-3 mt-4">
+        <h6 class="fw-bold mb-3">📝 Write a Review</h6>
+        <form method="post">
+            {% csrf_token %}
+            
+            <!-- Star Rating -->
+            <div class="star-rating mb-3" role="radiogroup" aria-label="Product rating">
+                <div class="stars-container d-flex gap-2 mb-1">
+                    <i class="bi bi-star" data-value="1" tabindex="0" aria-label="1 star"></i>
+                    <i class="bi bi-star" data-value="2" tabindex="0" aria-label="2 stars"></i>
+                    <i class="bi bi-star" data-value="3" tabindex="0" aria-label="3 stars"></i>
+                    <i class="bi bi-star" data-value="4" tabindex="0" aria-label="4 stars"></i>
+                    <i class="bi bi-star" data-value="5" tabindex="0" aria-label="5 stars"></i>
+                </div>
+                <input type="hidden" name="rating" value="0" required>
+                <div class="rating-feedback text-muted small">Tap to rate</div>
+            </div>
+
+            <!-- Comment Input -->
+            <div class="mb-3">
+                <input type="text" name="comment" class="form-control" 
+                    placeholder="Share your experience..." maxlength="500">
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-sm px-4">Submit Review</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- ✅ DISPLAY EXISTING REVIEWS -->
+    <div class="card border-theme bg-card p-3 mt-4">
+        <h6 class="fw-bold mb-3">⭐ Customer Reviews ({{ reviews.count|default:0 }})</h6>
+        
+        {% if reviews %}
+            {% for review in reviews %}
+            <div class="border-bottom pb-3 mb-3 {% if forloop.last %}border-0{% endif %}">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <strong class="text-primary">{{ review.user.username }}</strong>
+                        {% if review.user.user_profile.avatar %}
+                            <img src="{{ review.user.user_profile.get_avatar_url }}" 
+                                 class="rounded-circle" 
+                                 style="width: 24px; height: 24px; object-fit: cover;">
+                        {% endif %}
+                    </div>
+                    <small class="text-muted">{{ review.created_at|date:"M d, Y" }}</small>
+                </div>
+                
+                <!-- Star Display -->
+                <div class="text-warning mb-2">
+                    {% for i in "12345"|make_list %}
+                        {% if forloop.counter <= review.rating %}
+                            <i class="bi bi-star-fill"></i>
+                        {% else %}
+                            <i class="bi bi-star"></i>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                
+                <p class="mb-0">{{ review.comment }}</p>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-chat-square-text fs-4 d-block mb-2"></i>
+                <p class="mb-0">No reviews yet. Be the first to share your experience!</p>
+            </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- ✅ CSS (Your existing styles + reviews) -->
+<style>
+    /* ═══════════════════════════════════════════════════ */
+    /* ⭐ PLAY STORE STYLE STAR RATING                    */
+    /* ═════════════════════════════════════════════════ */
+    .star-rating { user-select: none; }
+    .stars-container i {
+        font-size: 1.6rem;
+        cursor: pointer;
+        color: var(--border);
+        transition: color 0.15s, transform 0.15s;
+    }
+    .stars-container i:hover,
+    .stars-container i.hovered {
+        color: var(--warning);
+        transform: scale(1.15);
+    }
+    .stars-container i.selected {
+        color: var(--warning);
+        transform: scale(1.1);
+    }
+    .rating-feedback {
+        font-size: 0.85rem;
+        transition: color 0.2s, font-weight 0.2s;
+    }
+    .rating-feedback.active {
+        color: var(--primary) !important;
+        font-weight: 600;
+    }
+    [data-theme="dark"] .stars-container i { color: var(--border-light); }
+    [data-theme="dark"] .stars-container i:hover,
+    [data-theme="dark"] .stars-container i.hovered,
+    [data-theme="dark"] .stars-container i.selected { color: var(--warning); }
+
+    /* ═══════════════════════════════════════════════════ */
+    /* ⬅️ BACK BUTTON: Theme-Aware & Responsive           */
+    /* ══════════════════════════════════════════════════ */
+    .back-nav { margin-bottom: 16px; display: inline-flex; }
+    .btn-back {
+        background: var(--surface) !important;
+        border: 1px solid var(--border) !important;
+        color: var(--text) !important;
+        border-radius: 8px !important;
+        padding: 6px 14px !important;
+        font-size: 0.85rem !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+        text-decoration: none !important;
+        cursor: pointer;
+    }
+    .btn-back:hover {
+        background: var(--surface-hover) !important;
+        border-color: var(--primary) !important;
+        color: var(--primary) !important;
+        transform: translateX(-2px);
+    }
+    .btn-back i { font-size: 1rem; line-height: 1; }
+    @media (max-width: 576px) {
+        .btn-back { padding: 5px 12px !important; font-size: 0.8rem !important; }
+        .btn-back span { display: none; }
+        .btn-back i { margin-right: 0; }
+    }
+
+    /* ── Product Detail Page Image Fix ── */
+    .product-img-wrapper {
+        aspect-ratio: auto !important;
+        height: auto !important;
+        min-height: 300px;
+        max-height: 500px;
+        background: #ffffff !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 12px;
+        overflow: hidden;
+        padding: 20px;
+    }
+    .product-img-wrapper img {
+        object-fit: contain !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: 100%;
+        padding: 0;
+    }
+
+    /* ── "You May Also Like" Alignment Fix ── */
+    .related-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: transform 0.2s, box-shadow 0.2s;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+    .related-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    }
+    .related-img-wrapper {
+        position: relative;
+        width: 100%;
+        height: 220px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .related-img {
+        max-width: 90%;
+        max-height: 90%;
+        object-fit: contain;
+    }
+    .related-card-body {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+        justify-content: space-between;
+    }
+    .related-info { margin-bottom: 12px; }
+    .related-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--tx);
+        line-height: 1.3;
+    }
+    .related-price {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--p);
+    }
+    .related-actions {
+        margin-top: auto;
+        padding-top: 10px;
+    }
+    .btn-add-related {
+        width: 100%;
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 8px 0;
+        transition: all 0.2s;
+    }
+
+    /* ── Reviews Section Styling ── */
+    .review-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid var(--border);
+    }
+    .review-stars i {
+        font-size: 0.9rem;
+        margin-right: 2px;
+    }
+    .review-comment {
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: var(--text);
+    }
+    .review-date {
+        font-size: 0.8rem;
+        color: var(--muted);
+    }
+</style>
+
+<!-- ✅ JavaScript (Star Rating + Reviews) -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Star Rating Logic
+    const ratingContainers = document.querySelectorAll('.star-rating');
+    ratingContainers.forEach(container => {
+        const stars = container.querySelectorAll('.stars-container i');
+        const hiddenInput = container.querySelector('input[name="rating"]');
+        const feedbackText = container.querySelector('.rating-feedback');
+        let selectedRating = 0;
+
+        const ratingLabels = {
+            0: 'Tap to rate', 1: 'Poor', 2: 'Fair', 3: 'Good', 4: 'Very Good', 5: 'Excellent'
+        };
+
+        function updateStars(rating, isPermanent = false) {
+            stars.forEach(star => {
+                const val = parseInt(star.dataset.value);
+                if (val <= rating) {
+                    star.classList.remove('bi-star');
+                    star.classList.add('bi-star-fill');
+                    star.classList.add(isPermanent ? 'selected' : 'hovered');
+                } else {
+                    star.classList.remove('bi-star-fill', 'selected', 'hovered');
+                    star.classList.add('bi-star');
+                }
+            });
+            feedbackText.textContent = ratingLabels[rating] || ratingLabels[0];
+            if (isPermanent) feedbackText.classList.add('active');
+            else feedbackText.classList.remove('active');
+        }
+
+        stars.forEach(star => {
+            star.addEventListener('mouseenter', () => updateStars(parseInt(star.dataset.value), false));
+            star.addEventListener('mouseleave', () => updateStars(selectedRating, true));
+            star.addEventListener('click', () => {
+                selectedRating = parseInt(star.dataset.value);
+                hiddenInput.value = selectedRating;
+                updateStars(selectedRating, true);
+            });
+            star.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    star.click();
+                }
+            });
+        });
+    });
+
+    // Auto-focus comment field after rating
+    const ratingInputs = document.querySelectorAll('input[name="rating"]');
+    ratingInputs.forEach(input => {
+        input.addEventListener('change', function() {
+            const form = this.closest('form');
+            const commentField = form.querySelector('input[name="comment"]');
+            if (commentField) commentField.focus();
+        });
+    });
+});
+
+// ── VR / 3D Controls (model-viewer) ─────────────────────────
+function switchView(mode) {
+    const photo  = document.getElementById('view-photo');
+    const vr     = document.getElementById('view-vr');
+    const bPhoto = document.getElementById('btn-photo');
+    const bVr    = document.getElementById('btn-vr');
+    if (mode === 'vr') {
+        photo.style.display = 'none';
+        vr.style.display    = 'block';
+        bVr.classList.add('btn-primary');
+        bVr.classList.remove('btn-outline-primary');
+        bPhoto.classList.add('btn-outline-secondary');
+        bPhoto.classList.remove('btn-secondary');
+    } else {
+        photo.style.display = 'flex';
+        vr.style.display    = 'none';
+        bPhoto.classList.add('btn-outline-secondary');
+        bPhoto.classList.remove('btn-secondary');
+        bVr.classList.add('btn-outline-primary');
+        bVr.classList.remove('btn-primary');
+    }
+}
+
+let _autoRotating = true;
+function toggleAutoRotate() {
+    const mv = document.getElementById('product-model-viewer');
+    if (!mv) return;
+    _autoRotating = !_autoRotating;
+    mv.autoRotate = _autoRotating;
+    document.getElementById('rotate-icon').className  = _autoRotating ? 'bi bi-pause-circle me-1' : 'bi bi-play-circle me-1';
+    document.getElementById('rotate-label').textContent = _autoRotating ? 'Pause' : 'Rotate';
+}
+
+// ── 360° image drag-to-pan ───────────────────────────────────
+(function() {
+    let dragging = false, startX = 0, scrollStart = 0;
+    document.addEventListener('mousedown', function(e) {
+        const img = document.getElementById('img360');
+        const wrap = document.getElementById('viewer360');
+        if (!img || !wrap || !wrap.contains(e.target)) return;
+        dragging = true;
+        startX = e.clientX;
+        scrollStart = img.style.objectPosition
+            ? parseInt(img.style.objectPosition) || 50 : 50;
+        img.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        const img = document.getElementById('img360');
+        if (!img) return;
+        const dx = (e.clientX - startX) / 4;
+        const newPos = Math.max(0, Math.min(100, scrollStart - dx));
+        img.style.objectPosition = newPos + '% center';
+    });
+    document.addEventListener('mouseup', function() {
+        dragging = false;
+        const img = document.getElementById('img360');
+        if (img) img.style.cursor = 'grab';
+    });
+    // Touch support
+    document.addEventListener('touchstart', function(e) {
+        const img = document.getElementById('img360');
+        const wrap = document.getElementById('viewer360');
+        if (!img || !wrap || !wrap.contains(e.target)) return;
+        startX = e.touches[0].clientX;
+        scrollStart = parseInt(img.style.objectPosition) || 50;
+    }, {passive:true});
+    document.addEventListener('touchmove', function(e) {
+        const img = document.getElementById('img360');
+        if (!img || !document.getElementById('viewer360')) return;
+        const dx = (e.touches[0].clientX - startX) / 4;
+        const newPos = Math.max(0, Math.min(100, scrollStart - dx));
+        img.style.objectPosition = newPos + '% center';
+    }, {passive:true});
+})();
+
+function tryAR() {
+    const notice = document.getElementById('ar-notice');
+    if (!notice) { alert('AR notice element missing'); return; }
+
+    const show = (icon, msg) => {
+        notice.innerHTML = '<i class="bi bi-' + icon + ' me-1"></i>' + msg;
+        notice.style.display = 'block';
+        clearTimeout(window._arTimer);
+        window._arTimer = setTimeout(() => { notice.style.display = 'none'; }, 8000);
+    };
+
+    // Step 1: must be HTTPS
+    if (location.protocol !== 'https:') {
+        show('lock-fill', '<strong>AR needs HTTPS.</strong> This works on localhost only for testing — deploy your site live and AR will be available on phones.');
+        return;
+    }
+
+    // Step 2: must be mobile
+    const isMobile = /android|iphone|ipad/i.test(navigator.userAgent);
+    if (!isMobile) {
+        show('phone', '<strong>AR is mobile-only.</strong> Open this product page on your Android or iPhone to place it in your real room.');
+        return;
+    }
+
+    // Step 3: try activating
+    const mv = document.getElementById('product-model-viewer');
+    if (mv && mv.canActivateAR) {
+        mv.activateAR();
+    } else {
+        show('exclamation-circle', 'AR not supported on this browser. Use <strong>Chrome</strong> on Android or <strong>Safari</strong> on iPhone.');
+    }
+}
+</script>
+{% endblock %}
