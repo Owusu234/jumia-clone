@@ -64,8 +64,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return div.innerHTML;
     }
 
-    function render() {
-        const list = getWishlist();
+    function render(list) {
         const grid = document.getElementById('wishlistGrid');
         const empty = document.getElementById('wishlistEmpty');
         grid.innerHTML = '';
@@ -81,15 +80,14 @@ document.addEventListener('DOMContentLoaded', function () {
             col.className = 'col-6 col-md-4 col-lg-3';
 
             const hasInfo = item.name || item.image;
-            // Use the exact product URL saved with the item first.
-            // For older entries, fall back to the Django product slug URL.
-            const href = item.url || item.product_url || (item.slug ? '/product/' + encodeURIComponent(item.slug) + '/' : '');
+            const href = item.href || '';
             const image = item.image || 'https://via.placeholder.com/400x300?text=No+Image';
             const productName = hasInfo ? item.name : 'Product #' + item.id;
             const price = item.price ? (String(item.price).indexOf('GH₵') === 0 ? item.price : 'GH₵' + item.price) : '';
 
-            // The image itself is directly inside an anchor. Clicking anywhere on the image
-            // therefore navigates to the actual Django product detail view.
+            // The image itself is directly inside an anchor whenever we have a
+            // resolved link, so clicking anywhere on the image navigates to
+            // the actual Django product detail view.
             const imageHtml = href
                 ? `<a href="${escapeHtml(href)}" class="d-block text-decoration-none" aria-label="View ${escapeHtml(productName)}">
                         <img src="${escapeHtml(image)}" class="card-img-top" style="height: 160px; object-fit: cover; background: #f0f0f0; cursor: pointer;" alt="${escapeHtml(productName)}"
@@ -106,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             ? `<a href="${escapeHtml(href)}" class="text-decoration-none"><div class="fw-semibold small mb-1">${escapeHtml(productName)}</div></a>`
                             : `<div class="fw-semibold small mb-1">${escapeHtml(productName)}</div>`}
                         <div class="text-muted small mb-2">${escapeHtml(price)}</div>
-                        ${!hasInfo ? '<div class="text-muted small mb-2">This item was saved before product details were tracked.</div>' : ''}
+                        ${item.unavailable ? '<div class="text-muted small mb-2">This item is no longer available.</div>' : ''}
                         <button type="button" class="btn btn-sm btn-outline-danger mt-auto sv-wishlist-remove" data-id="${escapeHtml(item.id)}">
                             <i class="bi bi-trash me-1"></i>Remove
                         </button>
@@ -135,12 +133,58 @@ document.addEventListener('DOMContentLoaded', function () {
                     badge.style.display = remaining ? 'inline-block' : 'none';
                 }
                 if (typeof svToast === 'function') svToast('Removed from wishlist', 'heart');
-                render();
+                loadAndRender();
             });
         });
     }
 
-    render();
+    async function loadAndRender() {
+        const list = getWishlist();
+
+        // Paint immediately from whatever's cached in localStorage so
+        // images/names show right away without waiting on a request.
+        render(list.map(function (item) {
+            return Object.assign({}, item, { href: item.url || item.product_url || (item.slug ? '/product/' + encodeURIComponent(item.slug) + '/' : '') });
+        }));
+
+        if (list.length === 0) return;
+
+        // Then resolve each item's *real* product URL/slug from the database,
+        // since the save button that stored this item may not have captured
+        // a working link. This is what makes clicking the image reliable.
+        const ids = list.map(function (item) { return item.id; }).filter(function (id) { return /^\d+$/.test(String(id)); });
+        if (ids.length === 0) return;
+
+        try {
+            const res = await fetch('/api/wishlist/products/?ids=' + ids.join(','));
+            const data = await res.json();
+            const byId = {};
+            (data.products || []).forEach(function (p) { byId[String(p.id)] = p; });
+
+            const merged = list.map(function (item) {
+                const authoritative = byId[String(item.id)];
+                if (authoritative) {
+                    return {
+                        id: authoritative.id,
+                        name: authoritative.name || item.name,
+                        price: authoritative.price || item.price,
+                        image: authoritative.image || item.image,
+                        href: '/product/' + encodeURIComponent(authoritative.slug) + '/',
+                        unavailable: authoritative.is_active === false
+                    };
+                }
+                // Not found in the database (deleted, or an id we can't trust) —
+                // keep whatever was cached, but don't link it anywhere.
+                return Object.assign({}, item, { href: '', unavailable: true });
+            });
+            render(merged);
+        } catch (e) {
+            // Network hiccup — leave the initial client-only render in place.
+            console.error('Could not refresh wishlist product links', e);
+        }
+    }
+
+    loadAndRender();
 });
 </script>
 {% endblock %}

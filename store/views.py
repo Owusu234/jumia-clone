@@ -469,11 +469,45 @@ def wishlist(req):
     """
     Wishlist page. Intentionally has no server-side wishlist logic —
     saved items live in the browser's localStorage (see the sv_wishlist
-    key set up in base.html) and are rendered client-side by wishlist.html.
+    key set up in base.html) and are rendered client-side by wishlist.html,
+    which calls wishlist_products_api() below to fill in real product data.
     This view just serves the page shell.
     """
     cart_count = len(req.session.get('cart', {})) if req.session else 0
     return render(req, "store/wishlist.html", {"cart_count": cart_count})
+
+
+def wishlist_products_api(req):
+    """
+    Read-only lookup: given ?ids=1,2,3 (the product IDs stored in the
+    sv_wishlist localStorage key), return each product's current name,
+    price, image, and slug so the wishlist page can render real cards
+    and link to the actual product page.
+    """
+    ids_param = req.GET.get("ids", "")
+    ids = [i for i in ids_param.split(",") if i.strip().isdigit()]
+    if not ids:
+        return JsonResponse({"products": []})
+
+    products = Product.objects.filter(id__in=ids).values(
+        "id", "name", "price", "slug", "supabase_image_path", "image_url", "is_active"
+    )
+    result = []
+    for p in products:
+        image = (
+            (p["supabase_image_path"] and f"{settings.SUPABASE_URL}/storage/v1/object/public/product-uploads/{p['supabase_image_path']}")
+            or p["image_url"]
+            or ""
+        )
+        result.append({
+            "id": p["id"],
+            "name": p["name"],
+            "price": str(p["price"]),
+            "slug": p["slug"],
+            "image": image,
+            "is_active": p["is_active"],
+        })
+    return JsonResponse({"products": result})
 
 
 @require_POST
