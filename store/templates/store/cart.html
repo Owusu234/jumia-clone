@@ -10,6 +10,44 @@
         </a>
     </div>
 
+    <!-- 🎁 Shared Cart: invite someone to see (and shop from) this cart -->
+    <div class="card border-theme bg-card p-3 mb-4">
+        <h6 class="fw-bold mb-2"><i class="bi bi-people me-1"></i>Share this cart</h6>
+        <p class="text-muted small mb-3">Invite someone by email — they'll see what's in your cart (handy for gift shopping), but never what either of you has already bought.</p>
+        <form method="post" action="{% url 'store:invite_to_cart' %}" class="d-flex gap-2 flex-wrap">
+            {% csrf_token %}
+            {{ invite_form.email }}
+            <button type="submit" class="btn btn-outline-primary">Send Invite</button>
+        </form>
+        {% if pending_invites %}
+        <ul class="small text-muted mt-3 mb-0 ps-3">
+            {% for invite in pending_invites %}
+            <li>Invite pending for {{ invite.invited_email }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    {% if shared_items %}
+    <div class="card border-theme bg-card p-3 mb-4">
+        <h6 class="fw-bold mb-3"><i class="bi bi-gift me-1"></i>Shared with you</h6>
+        {% for item in shared_items %}
+        <div class="d-flex align-items-center justify-content-between border-theme border-bottom py-2">
+            <div class="d-flex align-items-center gap-3">
+                <img src="{{ item.product.get_image }}" class="rounded border-theme" style="width: 56px; height: 56px; object-fit: contain; background: #fff;">
+                <div>
+                    <div class="fw-bold small">{{ item.product.name }}</div>
+                    <div class="text-muted small">Qty {{ item.quantity }}{% if item.color_variant %} · {{ item.color_variant }}{% endif %}{% if item.added_by %} · added by {{ item.added_by.username }}{% endif %}</div>
+                </div>
+            </div>
+            <a href="{% url 'store:add_to_cart' item.product.id %}" class="btn btn-sm btn-outline-success">
+                <i class="bi bi-gift me-1"></i>Buy as gift
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if cart_items %}
     <div class="row g-4">
         <!-- Cart Items Column -->
