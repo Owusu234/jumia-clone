@@ -37,8 +37,9 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-from .models import Product, Category, Cart, CartItem, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView
-from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
+from .models import Product, Category, Cart, CartItem, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView
+from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm, CartInviteForm
+from django.core.mail import send_mail
 from django.http import JsonResponse
 import re
 from django.core.paginator import Paginator
@@ -674,6 +675,50 @@ def submit_review(req, product_id):
 
 # ==================== CART & CHECKOUT ====================
 
+# ==================== SHARED CART (invite by email) ====================
+
+def _cart_groups_shared_with_me(user):
+    """Carts belonging to other people who've invited this user in — read-only,
+    used to show 'here's what's in their cart' (never what they've bought)."""
+    return user.joined_carts.all()
+
+def _sync_shared_cart_item(user, product, quantity=1, color='', remove=False):
+    """If this user owns a cart that they've shared with others (i.e. has
+    accepted members), mirror their own add/update/remove into it so those
+    members can see it. A no-op for everyone else — a member browsing their
+    own unrelated cart never writes into someone else's shared cart."""
+    try:
+        own_cart = user.cart
+    except Cart.DoesNotExist:
+        return
+    if not own_cart.members.exists():
+        return
+    try:
+        if remove or quantity < 1:
+            CartItem.objects.filter(cart=own_cart, product=product).delete()
+        else:
+            CartItem.objects.update_or_create(
+                cart=own_cart, product=product,
+                defaults={'quantity': quantity, 'color': color, 'added_by': user}
+            )
+    except Exception as e:
+        print(f"⚠️ Shared cart sync error: {e}")
+
+def _remove_from_any_shared_cart(user, product):
+    """Called right after a purchase completes: quietly drop the product from
+    any shared cart this user can see (their own, or one they've joined) so
+    it disappears from the shared list — without revealing who bought it."""
+    carts = list(user.joined_carts.all())
+    try:
+        carts.append(user.cart)
+    except Cart.DoesNotExist:
+        pass
+    try:
+        CartItem.objects.filter(cart__in=carts, product=product).delete()
+    except Exception as e:
+        print(f"⚠️ Shared cart cleanup error: {e}")
+
+
 def add_to_cart(req, product_id):
     if req.method == 'GET':
         try:
@@ -703,6 +748,10 @@ def add_to_cart(req, product_id):
             
             req.session['cart'] = cart
             req.session.modified = True
+
+            if req.user.is_authenticated:
+                _sync_shared_cart_item(req.user, product, cart[pid_key]['quantity'], cart[pid_key]['color'])
+
             return redirect('store:cart')
         except Product.DoesNotExist:
             pass
@@ -783,23 +832,94 @@ def cart(req):
         req.session['cart'] = clean_cart
         req.session.modified = True
 
+    # 🎁 Shared cart: items other people (who share a cart with this user)
+    # have added — visible so they can be bought as a surprise gift, but
+    # never shows anything about what's already been purchased.
+    my_product_ids = {int(pid) for pid in clean_cart.keys()}
+    shared_items = []
+    for shared_cart in _cart_groups_shared_with_me(req.user):
+        for ci in shared_cart.items.select_related('product', 'added_by').exclude(product_id__in=my_product_ids):
+            shared_items.append({
+                'product': ci.product,
+                'quantity': ci.quantity,
+                'color_variant': ci.color,
+                'added_by': ci.added_by,
+            })
+
+    invite_form = CartInviteForm()
+    pending_invites = CartInvite.objects.filter(inviter=req.user, status='pending')
+
     return render(req, 'store/cart.html', {
         'cart_items': cart_items,
         'cart_total': cart_total,
         'cart_count': cart_count,
+        'shared_items': shared_items,
+        'invite_form': invite_form,
+        'pending_invites': pending_invites,
     })
 
+
 @login_required
-def remove_from_cart(req, product_id):
-    """Remove product from cart"""
-    cart = req.session.get('cart', {})
-    pid = str(product_id)
-    
-    if pid in cart:
-        del cart[pid]
-        req.session['cart'] = cart
-        req.session.modified = True
-        
+@require_POST
+def invite_to_cart(req):
+    """Send an email invite so someone else can view (and shop from) this
+    user's cart as a shared cart — e.g. to buy something on it as a gift."""
+    form = CartInviteForm(req.POST)
+    if not form.is_valid():
+        messages.error(req, "❌ Please enter a valid email address.")
+        return redirect('store:cart')
+
+    email = form.cleaned_data['email']
+    if email.lower() == req.user.email.lower():
+        messages.error(req, "❌ You can't invite yourself.")
+        return redirect('store:cart')
+
+    invite = CartInvite.objects.create(inviter=req.user, invited_email=email)
+    accept_url = req.build_absolute_uri(reverse('store:accept_cart_invite', args=[invite.token]))
+
+    try:
+        send_mail(
+            subject=f"{req.user.username} invited you to share a cart on ShopVibe",
+            message=(
+                f"{req.user.username} wants to share their cart with you on ShopVibe.\n"
+                f"You'll be able to see what's in it (great for picking out a gift!) "
+                f"without them knowing what you end up buying.\n\n"
+                f"Accept the invite: {accept_url}"
+            ),
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        messages.success(req, f"✅ Invite sent to {email}.")
+    except Exception as e:
+        print(f"⚠️ Cart invite email failed: {e}")
+        messages.error(req, "❌ Couldn't send the invite email. Please try again.")
+
+    return redirect('store:cart')
+
+
+@login_required
+def accept_cart_invite(req, token):
+    """Accept a shared-cart invite. The logged-in user becomes a member of
+    the inviter's cart and can now see (and add to / shop from) it."""
+    invite = get_object_or_404(CartInvite, token=token)
+
+    if invite.status != 'pending':
+        messages.info(req, "ℹ️ This invite has already been used.")
+        return redirect('store:cart')
+
+    if invite.inviter_id == req.user.id:
+        messages.error(req, "❌ You can't accept your own invite.")
+        return redirect('store:cart')
+
+    inviter_cart, _ = Cart.objects.get_or_create(user=invite.inviter)
+    inviter_cart.members.add(req.user)
+
+    invite.status = 'accepted'
+    invite.responded_at = timezone.now()
+    invite.save(update_fields=['status', 'responded_at'])
+
+    messages.success(req, f"✅ You're now sharing {invite.inviter.username}'s cart!")
     return redirect('store:cart')
 
 
@@ -924,13 +1044,24 @@ def update_cart(req):
             del cart[pid]
         else:
             new_qty = max(1, current_qty + int(change))
+            new_color = color if color is not None else item.get('color', '')
             cart[pid] = {
                 'quantity': new_qty,
-                'color': color if color is not None else item.get('color', '')
+                'color': new_color
             }
             
         req.session['cart'] = cart
         req.session.modified = True
+
+        if req.user.is_authenticated:
+            try:
+                product = Product.objects.get(id=int(pid))
+                if change == 'remove':
+                    _sync_shared_cart_item(req.user, product, remove=True)
+                else:
+                    _sync_shared_cart_item(req.user, product, new_qty, new_color)
+            except Product.DoesNotExist:
+                pass
         
         new_count = sum(int(i.get('quantity', 1)) if isinstance(i, dict) else i for i in cart.values())
         return JsonResponse({'success': True, 'count': new_count})
@@ -1466,6 +1597,14 @@ def verify_paystack_payment(req):
             order.save(update_fields=['total_amount', 'items_count'])
         
         # 9️⃣ Clear cart session data
+        # 🎁 If any purchased item came from a shared cart, quietly drop it
+        # from that shared list — the buyer stays anonymous, the gift stays a surprise.
+        for pid in cart_data.keys():
+            try:
+                product = Product.objects.get(id=int(pid))
+                _remove_from_any_shared_cart(req.user, product)
+            except Product.DoesNotExist:
+                pass
         req.session['cart'] = {}
         req.session.pop('paystack_ref', None)
         req.session.pop('paystack_amount', None)
@@ -2382,6 +2521,12 @@ def remove_from_cart(req, product_id):
         req.session['cart'] = cart
         req.session.modified = True
         messages.success(req, "✅ Item removed from cart")
+
+        try:
+            product = Product.objects.get(id=product_id)
+            _sync_shared_cart_item(req.user, product, remove=True)
+        except Product.DoesNotExist:
+            pass
     
     return redirect('store:cart')
 

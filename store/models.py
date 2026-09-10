@@ -1,4 +1,5 @@
 # store/models.py
+import uuid
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save, post_delete
@@ -325,6 +326,9 @@ class Review(models.Model):
 
 class Cart(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="cart")
+    # 🎁 Shared cart: buyers this cart owner has invited (and who accepted) can see
+    # items added to this cart, e.g. to buy something on it as a surprise gift.
+    members = models.ManyToManyField(User, related_name="joined_carts", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -334,12 +338,39 @@ class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1)
+    color = models.CharField(max_length=50, blank=True, default='')
+    # Who most recently added/updated this item — used to show "added by" in a
+    # shared cart, never who bought it (purchases stay private).
+    added_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="added_cart_items")
     added_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         unique_together = ['cart', 'product']  
     
     def __str__(self): return f"{self.quantity}x {self.product.name}"
+
+
+class CartInvite(models.Model):
+    """An invite to share a cart, sent by email. Once accepted, the invited
+    user can see (and shop from) the inviter's cart as a shared cart."""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('declined', 'Declined'),
+    ]
+
+    inviter = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sent_cart_invites")
+    invited_email = models.EmailField()
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Invite from {self.inviter.username} to {self.invited_email} ({self.status})"
+
+    class Meta:
+        ordering = ['-created_at']
 
 # ==================== ORDERS & TRACKING ====================
 
