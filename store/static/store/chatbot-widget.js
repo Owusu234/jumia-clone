@@ -23,6 +23,7 @@
     <div id="sv-chat-messages"></div>
     <div id="sv-chat-input-row">
       <input id="sv-chat-input" type="text" placeholder="e.g. something formal for a wedding" />
+      <button id="sv-chat-mic" type="button" title="Speak instead of typing" aria-label="Speak your message">🎤</button>
       <button id="sv-chat-send">Send</button>
     </div>
   `;
@@ -34,6 +35,7 @@
   const inputEl = panel.querySelector("#sv-chat-input");
   const sendBtn = panel.querySelector("#sv-chat-send");
   const closeBtn = panel.querySelector("#sv-chat-close");
+  const micBtn = panel.querySelector("#sv-chat-mic");
 
   let history = [];
   let greeted = false;
@@ -148,4 +150,80 @@
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendMessage();
   });
+
+  // ---- Voice input (Web Speech API) ----
+  // Lets the user speak their message instead of typing it.
+  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognitionAPI) {
+    // Browser doesn't support speech recognition (e.g. Firefox) — hide the mic
+    // rather than showing a button that silently fails.
+    micBtn.style.display = "none";
+  } else {
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    let isListening = false;
+    let finalTranscript = "";
+
+    recognition.onstart = () => {
+      isListening = true;
+      finalTranscript = "";
+      micBtn.classList.add("listening");
+      micBtn.innerText = "⏹";
+      micBtn.title = "Stop listening";
+      inputEl.placeholder = "Listening...";
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      inputEl.value = (finalTranscript + interimTranscript).trim();
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        addBotMessage("I couldn't access your microphone. Please check your browser's microphone permissions.");
+      }
+    };
+
+    const resetMicUI = () => {
+      isListening = false;
+      micBtn.classList.remove("listening");
+      micBtn.innerText = "🎤";
+      micBtn.title = "Speak instead of typing";
+      inputEl.placeholder = "e.g. something formal for a wedding";
+    };
+
+    recognition.onend = () => {
+      resetMicUI();
+      // Auto-send the transcribed message, just like pressing Enter after typing.
+      if (inputEl.value.trim()) {
+        sendMessage();
+      }
+    };
+
+    micBtn.addEventListener("click", () => {
+      if (isListening) {
+        recognition.stop();
+      } else {
+        inputEl.value = "";
+        try {
+          recognition.start();
+        } catch (err) {
+          console.error("Could not start speech recognition:", err);
+        }
+      }
+    });
+  }
 })();
