@@ -155,10 +155,19 @@
   // Lets the user speak their message instead of typing it.
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  if (!SpeechRecognitionAPI) {
-    // Browser doesn't support speech recognition (e.g. Firefox) — hide the mic
-    // rather than showing a button that silently fails.
+  // The Web Speech API also requires a secure context (HTTPS, or
+  // localhost/127.0.0.1 in dev). On plain HTTP the constructor still
+  // exists, so the old check alone let the mic render and then fail
+  // silently the moment it was clicked. Check both up front.
+  const speechAvailable = !!SpeechRecognitionAPI && window.isSecureContext;
+
+  if (!speechAvailable) {
+    // Hide the mic rather than showing a button that silently fails,
+    // and say why so it's clear this isn't a bug.
     micBtn.style.display = "none";
+    if (SpeechRecognitionAPI && !window.isSecureContext) {
+      console.warn("ShopVibe chatbot: voice input needs HTTPS (or localhost) — mic hidden.");
+    }
   } else {
     const recognition = new SpeechRecognitionAPI();
     recognition.lang = "en-US";

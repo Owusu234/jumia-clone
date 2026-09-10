@@ -463,8 +463,19 @@ def home(req):
             "sort": sort,
         }
     })
-    
-    
+
+
+def wishlist(req):
+    """
+    Wishlist page. Intentionally has no server-side wishlist logic —
+    saved items live in the browser's localStorage (see the sv_wishlist
+    key set up in base.html) and are rendered client-side by wishlist.html.
+    This view just serves the page shell.
+    """
+    cart_count = len(req.session.get('cart', {})) if req.session else 0
+    return render(req, "store/wishlist.html", {"cart_count": cart_count})
+
+
 @require_POST
 def chatbot_recommend(req):
     """

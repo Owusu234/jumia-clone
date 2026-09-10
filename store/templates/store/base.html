@@ -51,7 +51,7 @@
                 </button>
 
                 <!-- Wishlist (new feature, client-side only) -->
-                <a href="#" onclick="return false;" class="btn btn-sm btn-outline-secondary rounded-circle d-none d-md-flex align-items-center justify-content-center position-relative" style="width: 40px; height: 40px;" title="Wishlist" id="wishlistNavBtn">
+                <a href="{% url 'store:wishlist' %}" class="btn btn-sm btn-outline-secondary rounded-circle d-none d-md-flex align-items-center justify-content-center position-relative" style="width: 40px; height: 40px;" title="Wishlist" id="wishlistNavBtn">
                     <i class="bi bi-heart"></i>
                     <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="wishlistNavCount" style="font-size: 0.65rem; display:none;">0</span>
                 </a>
@@ -355,8 +355,14 @@
     <script>
     (function() {
         function getWishlist() {
-            try { return JSON.parse(localStorage.getItem('sv_wishlist') || '[]'); }
+            let list;
+            try { list = JSON.parse(localStorage.getItem('sv_wishlist') || '[]'); }
             catch (e) { return []; }
+            // Migrate old format (array of plain ID strings) to the new
+            // object format so existing users' saved items still work.
+            return list.map(function(item) {
+                return (typeof item === 'string') ? { id: item, name: '', price: '', image: '', slug: '' } : item;
+            });
         }
         function saveWishlist(list) {
             localStorage.setItem('sv_wishlist', JSON.stringify(list));
@@ -375,13 +381,24 @@
         }
         window.svToggleWishlist = function(productId, btnEl) {
             let list = getWishlist();
-            const idx = list.indexOf(String(productId));
+            const id = String(productId);
+            const idx = list.findIndex(function(item) { return item.id === id; });
             if (idx > -1) {
                 list.splice(idx, 1);
                 if (btnEl) btnEl.classList.remove('active');
                 svToast('Removed from wishlist', 'heart');
             } else {
-                list.push(String(productId));
+                // Pull whatever product info is available on the button itself
+                // (data-product-name/price/image/slug) so the wishlist page can
+                // render without needing a backend lookup. Falls back to just
+                // the id if a button doesn't carry those attributes yet.
+                list.push({
+                    id: id,
+                    name: btnEl ? (btnEl.getAttribute('data-product-name') || '') : '',
+                    price: btnEl ? (btnEl.getAttribute('data-product-price') || '') : '',
+                    image: btnEl ? (btnEl.getAttribute('data-product-image') || '') : '',
+                    slug: btnEl ? (btnEl.getAttribute('data-product-slug') || '') : ''
+                });
                 if (btnEl) btnEl.classList.add('active');
                 svToast('Saved to wishlist', 'heart-fill');
             }
@@ -392,7 +409,7 @@
             const list = getWishlist();
             document.querySelectorAll('.wish-btn').forEach(function(btn) {
                 const id = btn.getAttribute('data-product-id');
-                if (id && list.indexOf(id) > -1) btn.classList.add('active');
+                if (id && list.some(function(item) { return item.id === id; })) btn.classList.add('active');
             });
         });
     })();
