@@ -61,18 +61,31 @@ document.addEventListener('DOMContentLoaded', function () {
             col.className = 'col-6 col-md-4 col-lg-3';
 
             const hasInfo = item.name || item.image;
-            const href = item.slug ? '/product/' + item.slug + '/' : '#';
+            // New wishlist entries store the exact Django product URL.
+            // Keep the old slug fallback for previously saved entries.
+            const href = item.url || item.product_url || item.slug
+                ? (item.url || item.product_url || ('/product/' + encodeURIComponent(item.slug) + '/'))
+                : '';
+            const image = item.image || 'https://via.placeholder.com/400x300?text=No+Image';
+            const productName = hasInfo ? item.name : 'Product #' + item.id;
+            const price = item.price ? 'GH₵' + item.price : '';
 
             col.innerHTML = `
                 <div class="card h-100 product-card">
-                    <a href="${href}">
-                        <img src="${item.image || ''}" class="card-img-top" style="height: 160px; object-fit: cover; background: #f0f0f0;" alt="${escapeHtml(item.name)}">
-                    </a>
+                    ${href ? `<a href="${escapeHtml(href)}" class="text-decoration-none d-block">
+                        <img src="${escapeHtml(image)}" class="card-img-top" style="height: 160px; object-fit: cover; background: #f0f0f0;" alt="${escapeHtml(productName)}"
+                             onerror="this.onerror=null;this.src='https://via.placeholder.com/400x300?text=No+Image';">
+                    </a>` : `
+                        <img src="${escapeHtml(image)}" class="card-img-top" style="height: 160px; object-fit: cover; background: #f0f0f0;" alt="${escapeHtml(productName)}"
+                             onerror="this.onerror=null;this.src='https://via.placeholder.com/400x300?text=No+Image';">
+                    `}
                     <div class="card-body d-flex flex-column">
-                        <div class="fw-semibold small mb-1">${hasInfo ? escapeHtml(item.name) : 'Product #' + escapeHtml(item.id)}</div>
-                        <div class="text-muted small mb-2">${item.price ? '$' + escapeHtml(item.price) : ''}</div>
-                        ${!hasInfo ? '<div class="text-muted small mb-2">Saved before details were tracked — open the product page to see it.</div>' : ''}
-                        <button type="button" class="btn btn-sm btn-outline-danger mt-auto sv-wishlist-remove" data-id="${item.id}">
+                        ${href
+                            ? `<a href="${escapeHtml(href)}" class="text-decoration-none"><div class="fw-semibold small mb-1">${escapeHtml(productName)}</div></a>`
+                            : `<div class="fw-semibold small mb-1">${escapeHtml(productName)}</div>`}
+                        <div class="text-muted small mb-2">${escapeHtml(price)}</div>
+                        ${!hasInfo ? '<div class="text-muted small mb-2">This item was saved before product details were tracked.</div>' : ''}
+                        <button type="button" class="btn btn-sm btn-outline-danger mt-auto sv-wishlist-remove" data-id="${escapeHtml(item.id)}">
                             <i class="bi bi-trash me-1"></i>Remove
                         </button>
                     </div>

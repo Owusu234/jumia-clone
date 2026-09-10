@@ -291,7 +291,15 @@
                         <img src="{{ p.get_image }}" class="product-img" alt="{{ p.name }}" loading="lazy" 
                              onerror="this.src='https://via.placeholder.com/400?text=No+Image'">
                     </a>
-                    <button type="button" class="wish-btn" data-product-id="{{ p.id }}" onclick="svToggleWishlist({{ p.id }}, this)" aria-label="Save {{ p.name }} to wishlist">
+                    <button type="button"
+                        class="wish-btn"
+                        data-product-id="{{ p.id }}"
+                        data-product-name="{{ p.name }}"
+                        data-product-price="{{ p.price }}"
+                        data-product-image="{{ p.get_image }}"
+                        data-product-url="{% url 'store:product_detail' p.slug %}"
+                        onclick="svToggleWishlist({{ p.id }}, this)"
+                        aria-label="Save {{ p.name }} to wishlist">
                         <i class="bi bi-heart"></i>
                     </button>
                 </div>
