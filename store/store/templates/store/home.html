@@ -293,11 +293,25 @@
     <div class="row g-3 product-grid">
         {% for p in products %}
         <div class="col-6 col-md-4 col-lg-3">
-            <div class="product-card">
-                <a href="{% url 'store:product_detail' p.slug %}" class="d-block">
-                    <img src="{{ p.get_image }}" class="product-img" alt="{{ p.name }}" loading="lazy" 
-                         onerror="this.src='https://via.placeholder.com/400?text=No+Image'">
-                </a>
+            <div class="product-card"
+                 data-product-id="{{ p.id }}"
+                 data-product-name="{{ p.name }}"
+                 data-product-image="{{ p.get_image }}"
+                 data-product-url="{% url 'store:product_detail' p.slug %}"
+                 data-product-price="GH₵{{ p.price }}">
+                <div class="product-media">
+                    <a href="{% url 'store:product_detail' p.slug %}" class="d-block">
+                        <img src="{{ p.get_image }}" class="product-img" alt="{{ p.name }}" loading="lazy" 
+                             onerror="this.src='https://via.placeholder.com/400?text=No+Image'">
+                    </a>
+                    <button type="button" class="product-save" data-sv-save data-sv-saved-icon
+                            aria-label="Save {{ p.name }}" aria-pressed="false">
+                        <i class="bi bi-heart"></i>
+                    </button>
+                    <div class="sv-quick">
+                        <a href="{% url 'store:product_detail' p.slug %}"><i class="bi bi-eye me-1"></i>Quick view</a>
+                    </div>
+                </div>
                 <div class="product-body">
                     <a href="{% url 'store:product_detail' p.slug %}" class="text-decoration-none">
                         <h6 class="product-title">{{ p.name }}</h6>
@@ -331,6 +345,15 @@
         </div>
         {% endfor %}
     </div>
+
+    <!-- Recently viewed: browser-local convenience feature -->
+    <section class="sv-recent-section" data-sv-recent-section>
+        <div class="sv-section-head">
+            <h5><i class="bi bi-clock-history me-2 text-primary"></i>Recently viewed</h5>
+            <small class="text-muted">Only visible on this device</small>
+        </div>
+        <div class="sv-recently" data-sv-recent-list></div>
+    </section>
 
     <!-- Pagination -->
     {% if products.has_other_pages %}

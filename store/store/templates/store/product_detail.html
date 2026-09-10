@@ -7,7 +7,12 @@
 <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
 {% endif %}
 {% endif %}
-<div class="container-fluid px-3 px-md-4 py-2"> 
+<div class="container-fluid px-3 px-md-4 py-2"
+     data-sv-current-product
+     data-id="{{ product.id }}"
+     data-name="{{ product.name }}"
+     data-image="{{ product.get_image }}"
+     data-price="GH₵{{ product.price }}"> 
     <!-- Back Button -->
     <div class="back-nav mb-3">
         <a href="#" 
@@ -115,7 +120,18 @@
         
         <!-- Product Info -->
         <div class="col-lg-6">
-            <h1 class="fw-bold mb-2">{{ product.name }}</h1>
+            <div class="d-flex align-items-start justify-content-between gap-3">
+                <h1 class="fw-bold mb-2 flex-grow-1">{{ product.name }}</h1>
+                <button type="button" class="product-save position-static flex-shrink-0" data-sv-save data-sv-saved-icon
+                        data-product-id="{{ product.id }}"
+                        data-product-name="{{ product.name }}"
+                        data-product-image="{{ product.get_image }}"
+                        data-product-url="{% url 'store:product_detail' product.slug %}"
+                        data-product-price="GH₵{{ product.price }}"
+                        aria-label="Save {{ product.name }}" aria-pressed="false">
+                    <i class="bi bi-heart"></i>
+                </button>
+            </div>
             <p class="text-muted mb-3">
                 <i class="bi bi-shop me-1"></i>
                 <a href="#" class="text-decoration-none">{{ product.seller.store_name }}</a>
