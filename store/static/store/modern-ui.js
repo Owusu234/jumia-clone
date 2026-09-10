@@ -35,17 +35,31 @@
     const box=document.querySelector('[data-sv-saved-list]'); if(!box)return;
     const list=saved();
     if(!list.length){box.innerHTML='<div class="sv-empty"><i class="bi bi-heart fs-2 d-block mb-2"></i><div>No saved products yet</div><small>Tap the heart on any product to save it.</small></div>';return}
-    box.innerHTML=list.map(p=>`<div class="sv-saved-item">
-      <img src="${esc(p.image)}" alt="">
-      <div class="grow"><div class="name">${esc(p.name)}</div><div class="price">${esc(p.price)}</div></div>
-      <a class="btn btn-sm btn-primary" href="${esc(p.url)}" aria-label="View ${esc(p.name)}"><i class="bi bi-arrow-right"></i></a>
-      <button class="sv-remove" type="button" data-sv-remove="${esc(p.id)}" aria-label="Remove"><i class="bi bi-x-lg"></i></button>
-    </div>`).join('');
+    box.innerHTML=list.map(p=>{
+      const url = p.url || p.product_url || '';
+      const image = p.image || '';
+      const content = `
+        <img src="${esc(image)}" alt="${esc(p.name || 'Saved product')}" loading="lazy" onerror="this.style.display='none'">
+        <div class="grow"><div class="name">${esc(p.name || 'Saved product')}</div><div class="price">${esc(p.price || '')}</div></div>`;
+      return `<div class="sv-saved-item">
+        ${url ? `<a class="sv-saved-product" href="${esc(url)}" aria-label="Open ${esc(p.name || 'saved product')}">${content}</a>` : content}
+        ${url ? `<a class="btn btn-sm btn-primary" href="${esc(url)}" aria-label="View ${esc(p.name || 'saved product')}"><i class="bi bi-arrow-right"></i></a>` : ''}
+        <button class="sv-remove" type="button" data-sv-remove="${esc(p.id)}" aria-label="Remove"><i class="bi bi-x-lg"></i></button>
+      </div>`;
+    }).join('');
     box.querySelectorAll('[data-sv-remove]').forEach(b=>b.addEventListener('click',()=>{
       write(KEY,saved().filter(p=>String(p.id)!==String(b.dataset.svRemove)));updateCounts();renderDrawer();
     }));
   }
   function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+  // Make the entire saved product (image + name + price) clickable.
+  // Keep the existing action buttons independent.
+  if (!document.getElementById('sv-saved-product-style')) {
+    const style=document.createElement('style');
+    style.id='sv-saved-product-style';
+    style.textContent='.sv-saved-product{display:flex;align-items:center;gap:12px;flex:1;min-width:0;color:inherit;text-decoration:none}.sv-saved-product:hover .name{text-decoration:underline}.sv-saved-product img{width:58px;height:58px;object-fit:contain;border-radius:10px;flex:0 0 58px;background:var(--surface,#f5f5f5)}';
+    document.head.appendChild(style);
+  }
 
   function initSavedButtons(){
     document.querySelectorAll('[data-sv-save]').forEach(btn=>{
