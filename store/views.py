@@ -870,14 +870,17 @@ def invite_to_cart(req):
         return redirect('store:cart')
 
     email = form.cleaned_data['email']
-    if email.lower() == req.user.email.lower():
-        messages.error(req, "❌ You can't invite yourself.")
-        return redirect('store:cart')
 
-    invite = CartInvite.objects.create(inviter=req.user, invited_email=email)
-    accept_url = req.build_absolute_uri(reverse('store:accept_cart_invite', args=[invite.token]))
-
+    # Everything below is wrapped in one try/except so nothing here can ever
+    # surface a raw 500 — any failure just shows a friendly error instead.
     try:
+        if req.user.email and email.lower() == req.user.email.lower():
+            messages.error(req, "❌ You can't invite yourself.")
+            return redirect('store:cart')
+
+        invite = CartInvite.objects.create(inviter=req.user, invited_email=email)
+        accept_url = req.build_absolute_uri(reverse('store:accept_cart_invite', args=[invite.token]))
+
         send_mail(
             subject=f"{req.user.username} invited you to share a cart on ShopVibe",
             message=(
@@ -892,7 +895,7 @@ def invite_to_cart(req):
         )
         messages.success(req, f"✅ Invite sent to {email}.")
     except Exception as e:
-        print(f"⚠️ Cart invite email failed: {e}")
+        print(f"⚠️ Cart invite error: {e}")
         messages.error(req, "❌ Couldn't send the invite email. Please try again.")
 
     return redirect('store:cart')
