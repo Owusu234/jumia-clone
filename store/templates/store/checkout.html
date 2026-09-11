@@ -147,6 +147,14 @@
                     <span class="fw-bold fs-5">Total</span>
                     <span class="fw-bold fs-5 text-primary">GH₵{{ total|floatformat:2 }}</span>
                 </div>
+
+                {% if not user.is_authenticated %}
+                <div class="mb-3">
+                    <label for="guest-email" class="form-label fw-bold">Your email</label>
+                    <input type="email" id="guest-email" class="form-control" placeholder="you@example.com" required>
+                    <small class="text-muted">Used only to process this payment with Paystack and send your receipt.</small>
+                </div>
+                {% endif %}
                 
                 <!-- Paystack Payment Button -->
                 <button type="button" id="paystack-button" class="paystack-btn" onclick="payWithPaystack()">
@@ -186,6 +194,7 @@
     // 1️⃣ Safe Django-to-JS Bridge
     const PK = "{{ paystack_public_key|default:'pk_test_placeholder'|escapejs }}";
     const EMAIL = "{{ user.email|default:''|escapejs }}";
+    const IS_GUEST = {{ user.is_authenticated|yesno:"false,true" }};
     const AMOUNT = {{ total_kobo|default:0 }};
     const CSRF_TOKEN = "{{ csrf_token }}";
     
@@ -254,6 +263,17 @@
         if (!btn) return;
         
         const originalHTML = btn.innerHTML;
+
+        let payerEmail = EMAIL;
+        if (IS_GUEST) {
+            const guestEmailInput = document.getElementById('guest-email');
+            payerEmail = guestEmailInput ? guestEmailInput.value.trim() : '';
+            if (!payerEmail || !payerEmail.includes('@')) {
+                showError('Please enter a valid email address to continue.');
+                return;
+            }
+        }
+
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Initializing...';
         
@@ -269,7 +289,7 @@
                 "Content-Type": "application/json",
                 "X-CSRFToken": CSRF_TOKEN
             },
-            body: JSON.stringify({})
+            body: JSON.stringify({ email: payerEmail })
         })
         .then(res => res.json())
         .then(data => {
@@ -298,7 +318,7 @@
 
             const handler = PaystackPop.setup({
                 key: PK,
-                email: EMAIL,
+                email: payerEmail,
                 amount: AMOUNT,
                 currency: "GHS",
                 ref: data.reference,
