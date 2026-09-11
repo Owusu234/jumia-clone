@@ -71,7 +71,7 @@
 
                 {% if user.is_authenticated and user.is_staff %}
                 <div class="position-relative me-3">
-                    <button class="btn btn-link text-dark position-relative border-0 p-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Admin Alerts">
+                    <button class="btn btn-link position-relative border-0 p-1" style="color: var(--tx);" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Admin Alerts">
                         <i class="bi bi-bell fs-5"></i>
                         {% if admin_notification_count > 0 %}
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem; min-width: 18px; height: 18px; padding: 3px;">

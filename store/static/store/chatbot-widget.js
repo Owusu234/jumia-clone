@@ -40,8 +40,127 @@
   let history = [];
   let greeted = false;
 
+  // ---- Draggable bubble ----
+  // Lets the user reposition the launcher anywhere on screen; the spot is
+  // remembered (per browser) so it stays put on the next visit.
+  const POSITION_KEY = "sv_chat_bubble_pos";
+  const DRAG_THRESHOLD = 6; // px before a press counts as a drag instead of a click
+  const EDGE_GAP = 8;
+
+  let dragPointerId = null;
+  let dragMoved = false;
+  let dragStartX = 0, dragStartY = 0, bubbleStartLeft = 0, bubbleStartTop = 0;
+
+  function clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  }
+
+  function placeBubble(left, top) {
+    const w = bubble.offsetWidth || 60;
+    const h = bubble.offsetHeight || 60;
+    left = clamp(left, EDGE_GAP, Math.max(EDGE_GAP, window.innerWidth - w - EDGE_GAP));
+    top = clamp(top, EDGE_GAP, Math.max(EDGE_GAP, window.innerHeight - h - EDGE_GAP));
+    bubble.style.left = left + "px";
+    bubble.style.top = top + "px";
+    bubble.style.right = "auto";
+    bubble.style.bottom = "auto";
+    return { left, top };
+  }
+
+  function positionPanelNearBubble() {
+    const bRect = bubble.getBoundingClientRect();
+    const panelWidth = Math.min(340, window.innerWidth * 0.92);
+    const panelHeight = Math.min(460, window.innerHeight * 0.75);
+    const gap = 14;
+
+    let top = bRect.top - gap - panelHeight;
+    if (top < EDGE_GAP) top = Math.min(bRect.bottom + gap, window.innerHeight - panelHeight - EDGE_GAP);
+    top = clamp(top, EDGE_GAP, Math.max(EDGE_GAP, window.innerHeight - panelHeight - EDGE_GAP));
+
+    let left = bRect.right - panelWidth;
+    left = clamp(left, EDGE_GAP, Math.max(EDGE_GAP, window.innerWidth - panelWidth - EDGE_GAP));
+
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+  }
+
+  function savePosition(left, top) {
+    try {
+      localStorage.setItem(POSITION_KEY, JSON.stringify({ left, top }));
+    } catch (err) {
+      /* localStorage unavailable (private mode etc.) — position just won't persist */
+    }
+  }
+
+  function restorePosition() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(POSITION_KEY) || "null");
+      if (saved && typeof saved.left === "number" && typeof saved.top === "number") {
+        placeBubble(saved.left, saved.top);
+      }
+    } catch (err) {
+      /* ignore malformed/unavailable storage */
+    }
+  }
+
+  bubble.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    dragPointerId = e.pointerId;
+    dragMoved = false;
+    const rect = bubble.getBoundingClientRect();
+    bubbleStartLeft = rect.left;
+    bubbleStartTop = rect.top;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    bubble.setPointerCapture(e.pointerId);
+  });
+
+  bubble.addEventListener("pointermove", (e) => {
+    if (dragPointerId !== e.pointerId) return;
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    if (!dragMoved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      dragMoved = true;
+      bubble.classList.add("sv-dragging");
+    }
+    if (dragMoved) {
+      placeBubble(bubbleStartLeft + dx, bubbleStartTop + dy);
+      if (panel.classList.contains("open")) positionPanelNearBubble();
+    }
+  });
+
+  function endDrag(e) {
+    if (dragPointerId !== e.pointerId) return;
+    bubble.releasePointerCapture(e.pointerId);
+    dragPointerId = null;
+    bubble.classList.remove("sv-dragging");
+    if (dragMoved) {
+      const rect = bubble.getBoundingClientRect();
+      savePosition(rect.left, rect.top);
+    }
+  }
+  bubble.addEventListener("pointerup", endDrag);
+  bubble.addEventListener("pointercancel", endDrag);
+
+  window.addEventListener("resize", () => {
+    const rect = bubble.getBoundingClientRect();
+    if (bubble.style.left) placeBubble(rect.left, rect.top);
+    if (panel.classList.contains("open")) positionPanelNearBubble();
+  });
+
+  restorePosition();
+
   bubble.addEventListener("click", () => {
+    // A drag that just ended fires a click right after pointerup — swallow it
+    // so dragging the bubble doesn't also toggle the chat panel open/closed.
+    if (dragMoved) {
+      dragMoved = false;
+      return;
+    }
     panel.classList.toggle("open");
+    if (panel.classList.contains("open")) positionPanelNearBubble();
     if (!greeted) {
       addBotMessage("Hi! Tell me what you're shopping for and I'll suggest a few things from the store.");
       greeted = true;

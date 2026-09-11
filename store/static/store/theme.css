@@ -263,6 +263,10 @@ a { transition: color 0.2s var(--ease); }
 @keyframes dropIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .dropdown-item { color: var(--tx); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; }
 .dropdown-item:hover, .dropdown-item:focus { background: rgba(246, 139, 30, 0.12); color: var(--p); }
+/* Bootstrap's .bg-light is a fixed near-white color; used on unread
+   dropdown items (e.g. admin notifications) it left theme-colored text
+   unreadable in dark mode. Route it through the theme instead. */
+.dropdown-item.bg-light { background: rgba(246, 139, 30, 0.08) !important; }
 .dropdown-divider { border-color: var(--border); }
 
 .pagination .page-link {
@@ -645,6 +649,9 @@ footer .footer-brand { color: var(--p); font-weight: 800; font-size: 1.2rem; }
 .alert-error, .alert-danger { border-left: 4px solid var(--danger) !important; }
 .alert-warning { border-left: 4px solid var(--warning) !important; }
 .alert-info { border-left: 4px solid var(--info) !important; }
-.btn-close { filter: var(--tx); opacity: 0.7; }
+.btn-close { opacity: 0.7; }
 .btn-close:hover { opacity: 1; }
+/* Bootstrap's .btn-close icon is a dark SVG by default, so it disappears
+   against dark surfaces. Invert it whenever dark mode is active. */
+[data-theme="dark"] .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
 .form-text { color: var(--muted); font-size: 0.8rem; }
