@@ -1,0 +1,87 @@
+/* ════════════════════════════════════════════════════════════════
+   ShopVibe — theme_fixes.css
+   Load AFTER theme.css (one extra <link> in base.html).
+   Fixes: mobile sidebar drawer conflict, mobile navbar overlap,
+   badge overflow, sticky-navbar double gap, theme-icon clipping.
+   ════════════════════════════════════════════════════════════════ */
+
+/* FIX 2c: navbar is sticky (in-flow), so the wrapper must NOT
+   be pushed down by a full navbar height (removes the white gap) */
+.layout-wrapper { margin-top: 0 !important; }
+
+/* FIX 4: keep icons centred & unclipped inside the 40px circles */
+.navbar .btn.rounded-circle i,
+.navbar .btn.rounded-circle {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* Mobile-only fixes */
+@media (max-width: 991px) {
+  /* FIX 2a: let the navbar grow instead of overlapping its fixed height */
+  .navbar {
+    height: auto !important;
+    min-height: var(--navbar-height);
+    padding: 8px 12px;
+  }
+  .navbar > .container-fluid {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 0;
+  }
+  .navbar-brand {
+    font-size: 1.2rem !important;
+    white-space: nowrap;
+    margin-right: 0 !important;
+  }
+  /* right-hand icon cluster hugs the right edge */
+  .navbar > .container-fluid > .d-flex {
+    margin-left: auto;
+    gap: 6px !important;
+  }
+
+  /* FIX 2b: keep count badges ON their buttons instead of overflowing
+     into the Sign Up button (kills the overlap seen in the screenshot) */
+  .navbar .badge.position-absolute {
+    top: -4px !important;
+    right: -6px !important;
+    left: auto !important;
+    transform: none !important;
+    font-size: 0.62rem;
+    min-width: 16px;
+    height: 16px;
+    padding: 2px 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* FIX 1: repair the sidebar drawer.
+     The (max-width:992px) block in theme.css makes it position:static /
+     width:100% / max-height:200px, which fights the 991px drawer rules.
+     Force proper fixed-drawer behaviour: */
+  .sidebar {
+    position: fixed !important;
+    top: var(--navbar-height) !important;
+    left: 0 !important;
+    bottom: auto !important;
+    width: min(280px, 85vw) !important;
+    height: calc(100vh - var(--navbar-height) - var(--footer-h, 48px)) !important;
+    max-height: none !important;
+    border-right: 1px solid var(--border) !important;
+    border-bottom: none !important;
+    transform: translateX(-100%);
+    transition: transform 0.3s var(--ease, ease);
+    z-index: 1020 !important;
+  }
+  .sidebar.show { transform: translateX(0) !important; }
+
+  /* sidebar must not displace main content while hidden OR shown */
+  main { margin-left: 0 !important; flex: 1 1 100% !important; min-width: 0 !important; }
+}
+
+/* Desktop sanity — pin intended behaviour so the conflicting
+   992px block can never leak in */
+@media (min-width: 992px) {
+  .sidebar { position: fixed !important; width: var(--sidebar-width, 220px) !important; max-height: none !important; }
+}
