@@ -8,7 +8,7 @@
       <div class="d-flex gap-2">
         {% if share_url %}
           <button class="btn btn-outline-primary btn-sm" onclick="copyCartLink('{{ share_url|escapejs }}', this)">
-            <i class="bi bi-link-45deg me-1"></i>Copy share link
+            <i class="bi bi-link-45deg me-1"></i>Share link
           </button>
           <form method="post" action="{% url 'store:stop_sharing_cart' %}" class="d-inline">
             {% csrf_token %}
@@ -132,9 +132,7 @@
 <script>
 function copyCartLink(url, btn) {
   navigator.clipboard.writeText(url).then(() => {
-    btn.innerHTML = '<i class="bi bi-share me-1"></i>Share Cart';
-    btn.classList.remove('btn-outline-primary');
-    btn.classList.add('btn-primary');
+    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Link copied!';
   });
 }
 document.getElementById('shareCartBtn')?.addEventListener('click', async function () {
@@ -150,9 +148,9 @@ document.getElementById('shareCartBtn')?.addEventListener('click', async functio
     });
     const data = await res.json();
     await navigator.clipboard.writeText(data.url);
-    btn.innerHTML = '<i class="bi bi-share me-1"></i>Share Cart';
-    btn.classList.remove('btn-success');
-    btn.classList.add('btn-primary');
+    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Link copied!';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-success');
   } catch (e) {
     btn.innerHTML = 'Try again';
   }

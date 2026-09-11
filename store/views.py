@@ -732,36 +732,64 @@ def share_cart(req):
 @login_required
 @require_POST
 def start_shared_cart_purchase(req, token, action):
-    """Put one item from a shared cart into the payer's session checkout.
-    action='gift' means the shared-cart owner receives the order; action='self'
-    means the person opening the link receives it themselves."""
+    """Put one item or the entire shared cart into the payer's checkout.
+    action='gift'/'gift_all' means the shared-cart owner receives the order;
+    action='self'/'self_all' means the person opening the link receives it."""
     link = get_object_or_404(SharedCartLink, token=token, is_active=True)
-    item_id = req.POST.get('item_id')
-    item = get_object_or_404(
-        CartItem.objects.select_related('product', 'cart__user'),
-        id=item_id, cart__user=link.owner, product__is_active=True
-    )
-    if item.product.stock < item.quantity:
-        messages.error(req, 'Sorry, there is not enough stock available for this item.')
-        return redirect('store:shared_cart', token=token)
 
-    # A fresh checkout session prevents an existing buyer cart from being mixed
-    # into a gift purchase.
-    color, size = _normalise_variant(item.product, item.color, item.size)
-    req.session['cart'] = {
-        _cart_key(item.product.id, color, size): {
+    is_all = action in ('gift_all', 'self_all')
+    purchase_action = 'gift' if action in ('gift', 'gift_all') else 'self'
+
+    if is_all:
+        items_qs = list(
+            link.owner.cart.items.select_related('product').filter(product__is_active=True)
+        )
+        if not items_qs:
+            messages.error(req, 'This shared cart is empty.')
+            return redirect('store:shared_cart', token=token)
+        items = items_qs
+    else:
+        item_id = req.POST.get('item_id')
+        item = get_object_or_404(
+            CartItem.objects.select_related('product', 'cart__user'),
+            id=item_id, cart__user=link.owner, product__is_active=True
+        )
+        items = [item]
+
+    # Validate stock before starting checkout so the payer does not reach
+    # Paystack only to discover that one of the selected items is unavailable.
+    for item in items:
+        if item.product.stock < item.quantity:
+            messages.error(
+                req,
+                f'Sorry, there is not enough stock available for {item.product.name}.'
+            )
+            return redirect('store:shared_cart', token=token)
+
+    checkout_cart = {}
+    source_item_ids = []
+    for item in items:
+        color, size = _normalise_variant(item.product, item.color, item.size)
+        checkout_cart[_cart_key(item.product.id, color, size)] = {
             'quantity': item.quantity, 'color': color, 'size': size
         }
-    }
+        source_item_ids.append(item.id)
+
+    # A fresh checkout session prevents an existing buyer cart from being mixed
+    # into a shared-cart purchase.
+    req.session['cart'] = checkout_cart
     req.session['shared_purchase'] = {
         'owner_id': link.owner_id,
         'payer_id': req.user.id,
-        'action': 'gift' if action == 'gift' else 'self',
-        'source_item_id': item.id,
+        'action': purchase_action,
+        'source_item_ids': source_item_ids,
+        'source_item_id': source_item_ids[0] if len(source_item_ids) == 1 else None,
+        'purchase_all': is_all,
         'token': str(token),
     }
     req.session.modified = True
     return redirect('store:checkout')
+
 
 def shared_cart(req, token):
     """Anyone with the link can view the owner's current cart. Purchases are
