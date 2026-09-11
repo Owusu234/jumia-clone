@@ -27,8 +27,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models.functions import TruncDay,TruncHour
 from datetime import timezone as dt_timezone
 from django.views.decorators.http import require_POST
-from django.db import transaction
-from django.db import IntegrityError
+from django.db import transaction, IntegrityError
 from django.contrib.auth import login
 
 # ==================== AI CHATBOT (OpenRouter) ====================
