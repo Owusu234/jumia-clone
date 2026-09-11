@@ -339,7 +339,7 @@
                     <div class="mt-auto d-grid gap-2">
                         {% if p.stock > 0 %}
                         <a href="{% url 'store:product_detail' p.slug %}" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-cart-plus me-1"></i>{% if p.get_colors or p.size_list %}Choose Options{% else %}Add{% endif %}
+                            <i class="bi bi-cart-plus me-1"></i>{% if p.get_colors or p.size_list %}Add to cart{% else %}Add{% endif %}
                         </a>
                         {% else %}
                         <button class="btn btn-sm btn-secondary" disabled>Out</button>
