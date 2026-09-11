@@ -134,27 +134,43 @@
             
             <p class="mb-3">{{ product.description|truncatewords:20 }}</p>
 
-            <!-- Buyer-visible product specifications -->
-            {% if product.colors or product.warranty or product.available_sizes or product.dimensions_display %}
-            <div class="product-specifications card border-theme mb-4">
-                <div class="card-body">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-info-circle me-2"></i>Product Specifications</h5>
-                    <div class="row g-3">
-                        {% if product.colors %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-palette me-2"></i>Colors</span><span class="spec-value">{{ product.colors }}</span></div></div>{% endif %}
-                        {% if product.warranty %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-shield-check me-2"></i>Warranty</span><span class="spec-value">{{ product.warranty }}</span></div></div>{% endif %}
-                        {% if product.available_sizes %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-rulers me-2"></i>Available Sizes</span><span class="spec-value">{{ product.available_sizes }}</span></div></div>{% endif %}
-                        {% if product.dimensions_display %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-box me-2"></i>Dimensions</span><span class="spec-value">{{ product.dimensions_display }}</span></div></div>{% endif %}
-                    </div>
+            {% if product.get_colors or product.size_list %}
+            <form method="post" action="{% url 'store:add_to_cart' product.id %}" class="variant-selection card border-theme bg-card p-3 mb-3">
+                {% csrf_token %}
+                <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-1"></i>Select your options</h6>
+                {% if product.get_colors %}
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Color</label>
+                    <select name="color" class="form-select" required>
+                        <option value="">Choose a color</option>
+                        {% for color in product.get_colors %}<option value="{{ color }}">{{ color }}</option>{% endfor %}
+                    </select>
                 </div>
+                {% endif %}
+                {% if product.size_list %}
+                <div class="mb-1">
+                    <label class="form-label fw-semibold">Size</label>
+                    <select name="size" class="form-select" required>
+                        <option value="">Choose a size</option>
+                        {% for size in product.size_list %}<option value="{{ size }}">{{ size }}</option>{% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                {% if product.stock > 0 %}
+                <button type="submit" class="btn btn-primary btn-lg w-100">
+                    <i class="bi bi-cart-plus me-2"></i>Add to Cart
+                </button>
+                {% endif %}
+            </form>
+            {% elif product.stock > 0 %}
+            <div class="d-grid gap-2">
+                <a href="{% url 'store:add_to_cart' product.id %}" class="btn btn-primary btn-lg">
+                    <i class="bi bi-cart-plus me-2"></i>Add to Cart
+                </a>
             </div>
             {% endif %}
             
             <div class="d-grid gap-2">
-                {% if product.stock > 0 %}
-                <a href="{% url 'store:add_to_cart' product.id %}" class="btn btn-primary btn-lg">
-                    <i class="bi bi-cart-plus me-2"></i>Add to Cart
-                </a>
-                {% endif %}
                 
                 <!-- WhatsApp Contact Section -->
                 <div class="mt-4">
@@ -212,7 +228,7 @@
                     </div>
                     <div class="related-actions">
                         {% if rp.stock > 0 %}
-                        <a href="{% url 'store:add_to_cart' rp.id %}" class="btn btn-outline-primary btn-add-related">Add</a>
+                        <a href="{% url 'store:product_detail' rp.slug %}" class="btn btn-outline-primary btn-add-related">{% if rp.get_colors or rp.size_list %}Choose Options{% else %}View & Add{% endif %}</a>
                         {% else %}
                         <button class="btn btn-secondary btn-add-related" disabled>Out of Stock</button>
                         {% endif %}
@@ -228,7 +244,7 @@
     {% if user.is_authenticated %}
     <div class="card border-theme bg-card p-3 mt-4">
         <h6 class="fw-bold mb-3">📝 Write a Review</h6>
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
             
             <!-- Star Rating -->
@@ -246,8 +262,26 @@
 
             <!-- Comment Input -->
             <div class="mb-3">
-                <input type="text" name="comment" class="form-control" 
-                    placeholder="Share your experience..." maxlength="500">
+                <label class="form-label fw-semibold">Review text</label>
+                <textarea name="comment" class="form-control" rows="3"
+                    placeholder="Share your experience..." maxlength="500" required></textarea>
+            </div>
+
+            <!-- Buyer photo -->
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Add a photo (optional)</label>
+                <div class="review-photo-upload">
+                    <label for="review-image" class="review-photo-trigger">
+                        <i class="bi bi-camera-fill fs-4"></i>
+                        <span>Take a photo or upload</span>
+                    </label>
+                    <input id="review-image" type="file" name="image" accept="image/*" capture="environment" class="d-none">
+                    <div id="review-image-preview" class="review-image-preview d-none mt-2">
+                        <img id="review-preview-img" src="" alt="Review photo preview">
+                        <button type="button" id="remove-review-image" class="btn btn-sm btn-outline-danger">Remove</button>
+                    </div>
+                    <small class="text-muted d-block mt-2">Your photo will be cropped and saved in passport-photo proportions (350 × 450 px).</small>
+                </div>
             </div>
             
             <button type="submit" class="btn btn-primary btn-sm px-4">Submit Review</button>
@@ -285,7 +319,12 @@
                     {% endfor %}
                 </div>
                 
-                <p class="mb-0">{{ review.comment }}</p>
+                <p class="mb-2">{{ review.comment }}</p>
+                {% if review.review_image_url %}
+                <div class="review-photo-display">
+                    <img src="{{ review.review_image_url }}" alt="Photo uploaded with review by {{ review.user.username }}" loading="lazy">
+                </div>
+                {% endif %}
             </div>
             {% endfor %}
         {% else %}
@@ -357,12 +396,6 @@
         .btn-back span { display: none; }
         .btn-back i { margin-right: 0; }
     }
-
-    .product-specifications { background: var(--card, var(--bg-card)); }
-    .spec-item { display:flex; flex-direction:column; gap:4px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; height:100%; }
-    .spec-label { font-weight:700; color:var(--text); font-size:.86rem; }
-    .spec-value { color:var(--text-muted); font-size:.9rem; word-break:break-word; }
-    .spec-label i { color:var(--primary); }
 
     /* Product hero image */
     .product-img-wrapper {
@@ -450,6 +483,29 @@
         font-weight: 700;
         padding: 8px 0;
     }
+
+    /* Buyer review photos */
+    .review-photo-trigger {
+        width: 110px;
+        height: 142px;
+        border: 2px dashed var(--border);
+        border-radius: var(--radius);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        cursor: pointer;
+        text-align: center;
+        color: var(--text);
+        background: var(--surface);
+    }
+    .review-photo-trigger:hover { border-color: var(--primary); color: var(--primary); }
+    .review-image-preview img, .review-photo-display img {
+        width: 110px; height: 142px; object-fit: cover; border-radius: var(--radius-sm);
+        border: 1px solid var(--border); background: #fff;
+    }
+    .review-photo-display { margin-top: 8px; }
 
     /* Reviews */
     .review-avatar {
@@ -632,5 +688,26 @@ function tryAR() {
         show('exclamation-circle', 'AR not supported on this browser. Use <strong>Chrome</strong> on Android or <strong>Safari</strong> on iPhone.');
     }
 }
+
+    // Review photo preview / camera upload
+    const reviewImageInput = document.getElementById('review-image');
+    const reviewPreview = document.getElementById('review-image-preview');
+    const reviewPreviewImg = document.getElementById('review-preview-img');
+    const removeReviewImage = document.getElementById('remove-review-image');
+    if (reviewImageInput) {
+        reviewImageInput.addEventListener('change', function () {
+            const file = this.files && this.files[0];
+            if (!file) return;
+            if (!file.type.startsWith('image/')) { alert('Please select an image file.'); this.value = ''; return; }
+            if (file.size > 5 * 1024 * 1024) { alert('Please choose an image smaller than 5 MB.'); this.value = ''; return; }
+            reviewPreviewImg.src = URL.createObjectURL(file);
+            reviewPreview.classList.remove('d-none');
+        });
+    }
+    if (removeReviewImage) {
+        removeReviewImage.addEventListener('click', function () {
+            reviewImageInput.value = ''; reviewPreviewImg.src = ''; reviewPreview.classList.add('d-none');
+        });
+    }
 </script>
 {% endblock %}

@@ -37,11 +37,11 @@
                 <img src="{{ item.product.get_image }}" class="rounded border-theme" style="width: 56px; height: 56px; object-fit: contain; background: #fff;">
                 <div>
                     <div class="fw-bold small">{{ item.product.name }}</div>
-                    <div class="text-muted small">Qty {{ item.quantity }}{% if item.color_variant %} · {{ item.color_variant }}{% endif %}{% if item.added_by %} · added by {{ item.added_by.username }}{% endif %}</div>
+                    <div class="text-muted small">Qty {{ item.quantity }}{% if item.color_variant %} · Color: {{ item.color_variant }}{% endif %}{% if item.size_variant %} · Size: {{ item.size_variant }}{% endif %}{% if item.added_by %} · added by {{ item.added_by.username }}{% endif %}</div>
                 </div>
             </div>
-            <a href="{% url 'store:add_to_cart' item.product.id %}" class="btn btn-sm btn-outline-success">
-                <i class="bi bi-gift me-1"></i>Buy as gift
+            <a href="{% url 'store:product_detail' item.product.slug %}" class="btn btn-sm btn-outline-success">
+                <i class="bi bi-gift me-1"></i>Choose & Buy
             </a>
         </div>
         {% endfor %}
@@ -67,28 +67,40 @@
                         <h6 class="fw-bold mb-1">{{ item.product.name }}</h6>
                         <p class="text-muted small mb-2">{{ item.product.description|truncatewords:12 }}</p>
                         
-                        <!-- 🎨 Color/Variant Selector -->
+                        <!-- Variant selectors -->
+                        {% if item.product.get_colors %}
                         <div class="d-flex align-items-center gap-2 mb-2">
                             <label class="small fw-bold text-muted mb-0">Color:</label>
-                            <select class="form-select form-select-sm" style="width: auto; max-width: 140px;" 
-                                    onchange="updateCartVariant({{ item.product.id }}, this.value)">
-                                <option value="">Select</option>
-                                {% for color in item.product.get_available_colors %}
+                            <select class="form-select form-select-sm" style="width: auto; max-width: 160px;"
+                                    onchange="updateCartVariant('{{ item.key|escapejs }}', this.value, null)">
+                                {% for color in item.product.get_colors %}
                                 <option value="{{ color }}" {% if item.color_variant == color %}selected{% endif %}>{{ color }}</option>
                                 {% endfor %}
                             </select>
                         </div>
+                        {% endif %}
+                        {% if item.product.size_list %}
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <label class="small fw-bold text-muted mb-0">Size:</label>
+                            <select class="form-select form-select-sm" style="width: auto; max-width: 160px;"
+                                    onchange="updateCartVariant('{{ item.key|escapejs }}', null, this.value)">
+                                {% for size in item.product.size_list %}
+                                <option value="{{ size }}" {% if item.size_variant == size %}selected{% endif %}>{{ size }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endif %}
                         
                         <!-- 🔢 Quantity Controls -->
                         <div class="d-flex align-items-center gap-2">
                             <span class="small fw-bold text-muted mb-0">Qty:</span>
                             <div class="input-group input-group-sm" style="width: 110px;">
                                 <button class="btn btn-outline-secondary" type="button" 
-                                        onclick="updateCartQty({{ item.product.id }}, -1)">−</button>
+                                        onclick="updateCartQty('{{ item.key|escapejs }}', -1)">−</button>
                                 <input type="number" class="form-control text-center fw-bold" 
                                        value="{{ item.quantity }}" readonly>
                                 <button class="btn btn-outline-secondary" type="button" 
-                                        onclick="updateCartQty({{ item.product.id }}, 1)">+</button>
+                                        onclick="updateCartQty('{{ item.key|escapejs }}', 1)">+</button>
                             </div>
                         </div>
                     </div>
@@ -97,7 +109,7 @@
                     <div class="text-end">
                         <div class="fw-bold fs-5 text-primary">GH₵{{ item.total_price|floatformat:2 }}</div>
                         <button class="btn btn-sm btn-link text-danger p-0 mt-2" 
-                                onclick="removeFromCart({{ item.product.id }})">
+                                onclick="removeFromCart('{{ item.key|escapejs }}')">
                             <i class="bi bi-trash3 me-1"></i>Remove
                         </button>
                     </div>
@@ -145,40 +157,33 @@
 
 <!--  Cart AJAX Logic -->
 <script>
-function updateCartQty(productId, change) {
-    updateCartAPI(productId, null, change);
+function updateCartQty(cartKey, change) { updateCartAPI(cartKey, null, null, change); }
+function updateCartVariant(cartKey, color, size) {
+    // Preserve the other variant by reading the current row's selects.
+    const row = document.querySelector(`[onclick*="${CSS.escape(cartKey)}"]`)?.closest('.cart-item-row');
+    if (row) {
+        const selects = row.querySelectorAll('select');
+        let selectedColor = color, selectedSize = size;
+        selects.forEach(select => {
+            const label = select.previousElementSibling?.textContent?.trim().toLowerCase();
+            if (label === 'color:' && color === null) selectedColor = select.value;
+            if (label === 'size:' && size === null) selectedSize = select.value;
+        });
+        updateCartAPI(cartKey, selectedColor, selectedSize, 0);
+    } else updateCartAPI(cartKey, color, size, 0);
 }
-function updateCartVariant(productId, color) {
-    updateCartAPI(productId, color, 0);
+function removeFromCart(cartKey) {
+    if (confirm('Remove this item from cart?')) updateCartAPI(cartKey, null, null, 'remove');
 }
-function removeFromCart(productId) {
-    if(confirm('Remove this item from cart?')) {
-        updateCartAPI(productId, null, 'remove');
-    }
-}
-
-function updateCartAPI(productId, color, change) {
+function updateCartAPI(cartKey, color, size, change) {
     fetch("{% url 'store:update_cart' %}", {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': '{{ csrf_token }}'
-        },
-        body: JSON.stringify({ 
-            product_id: productId, 
-            color: color, 
-            change: change 
-        })
-    })
-    .then(res => res.json())
-    .then(data => {
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+        body: JSON.stringify({cart_key: cartKey, color: color, size: size, change: change})
+    }).then(res => res.json()).then(data => {
         if (data.success) location.reload();
         else alert(data.error || 'Update failed. Please try again.');
-    })
-    .catch(err => {
-        console.error(err);
-        alert('Network error. Please check your connection.');
-    });
+    }).catch(err => { console.error(err); alert('Network error. Please check your connection.'); });
 }
 </script>
 {% endblock %}

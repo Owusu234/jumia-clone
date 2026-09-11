@@ -347,6 +347,9 @@ class Review(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="reviews")
     rating = models.PositiveSmallIntegerField(choices=[(i, i) for i in range(1, 6)])
     comment = models.TextField(blank=True, max_length=500)
+    image = models.ImageField(upload_to="reviews/", blank=True, null=True, help_text="Optional buyer photo. Stored at passport-photo dimensions (350×450 px).")
+    # Public URL of the processed buyer photo stored in the Supabase Storage "review" bucket.
+    review_image_url = models.URLField(blank=True, null=True, max_length=1000)
     is_approved = models.BooleanField(default=True)  
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -375,13 +378,14 @@ class CartItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1)
     color = models.CharField(max_length=50, blank=True, default='')
+    size = models.CharField(max_length=50, blank=True, default='')
     # Who most recently added/updated this item — used to show "added by" in a
     # shared cart, never who bought it (purchases stay private).
     added_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="added_cart_items")
     added_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        unique_together = ['cart', 'product']  
+        unique_together = ['cart', 'product', 'color', 'size']
     
     def __str__(self): return f"{self.quantity}x {self.product.name}"
 
@@ -448,6 +452,8 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+    color = models.CharField(max_length=50, blank=True, default='')
+    size = models.CharField(max_length=50, blank=True, default='')
     
     def __str__(self):
         return f"{self.quantity}x {self.product.name}"

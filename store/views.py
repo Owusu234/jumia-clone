@@ -40,6 +40,7 @@ paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 from .models import Product, Category, Cart, CartItem, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm, CartInviteForm
 from django.core.mail import send_mail
+from django.core.files.base import ContentFile
 from django.http import JsonResponse
 import re
 from django.core.paginator import Paginator
@@ -682,11 +683,7 @@ def _cart_groups_shared_with_me(user):
     used to show 'here's what's in their cart' (never what they've bought)."""
     return user.joined_carts.all()
 
-def _sync_shared_cart_item(user, product, quantity=1, color='', remove=False):
-    """If this user owns a cart that they've shared with others (i.e. has
-    accepted members), mirror their own add/update/remove into it so those
-    members can see it. A no-op for everyone else — a member browsing their
-    own unrelated cart never writes into someone else's shared cart."""
+def _sync_shared_cart_item(user, product, quantity=1, color='', size='', remove=False):
     try:
         own_cart = user.cart
     except Cart.DoesNotExist:
@@ -695,11 +692,11 @@ def _sync_shared_cart_item(user, product, quantity=1, color='', remove=False):
         return
     try:
         if remove or quantity < 1:
-            CartItem.objects.filter(cart=own_cart, product=product).delete()
+            CartItem.objects.filter(cart=own_cart, product=product, color=color or '', size=size or '').delete()
         else:
             CartItem.objects.update_or_create(
-                cart=own_cart, product=product,
-                defaults={'quantity': quantity, 'color': color, 'added_by': user}
+                cart=own_cart, product=product, color=color or '', size=size or '',
+                defaults={'quantity': quantity, 'added_by': user}
             )
     except Exception as e:
         print(f"⚠️ Shared cart sync error: {e}")
@@ -719,144 +716,94 @@ def _remove_from_any_shared_cart(user, product):
         print(f"⚠️ Shared cart cleanup error: {e}")
 
 
+def _cart_key(product_id, color='', size=''):
+    return f"{product_id}::{str(color or '').strip()}::{str(size or '').strip()}"
+
+def _parse_cart_key(key):
+    text = str(key)
+    if '::' in text:
+        parts = text.split('::', 2)
+        return parts[0], parts[1], parts[2]
+    return text, '', ''
+
+def _normalise_variant(product, color='', size=''):
+    color = str(color or '').strip()
+    size = str(size or '').strip()
+    if product.get_colors() and color not in product.get_colors(): color = ''
+    if product.size_list and size not in product.size_list: size = ''
+    return color, size
+
 def add_to_cart(req, product_id):
-    if req.method == 'GET':
-        try:
-            product = Product.objects.get(id=product_id)
-            cart = req.session.get('cart', {})
-            if not isinstance(cart, dict):
-                cart = {}
-                
-            pid_key = str(product_id)
-            
-            # Extract current qty safely
-            current_qty = 1
-            current_color = ''
-            if pid_key in cart:
-                item = cart[pid_key]
-                if isinstance(item, dict):
-                    current_qty = int(item.get('quantity', 1))
-                    current_color = item.get('color', '')
-                elif isinstance(item, (int, float)):
-                    current_qty = int(item)
-                    
-            # Overwrite with clean structure
-            cart[pid_key] = {
-                'quantity': current_qty + 1,
-                'color': req.GET.get('color', current_color)
-            }
-            
-            req.session['cart'] = cart
-            req.session.modified = True
+    if req.method not in ('GET', 'POST'):
+        return redirect('store:home')
+    product = get_object_or_404(Product, id=product_id, is_active=True)
+    if product.stock <= 0:
+        messages.warning(req, 'This product is out of stock.')
+        return redirect('store:product_detail', slug=product.slug)
 
-            if req.user.is_authenticated:
-                _sync_shared_cart_item(req.user, product, cart[pid_key]['quantity'], cart[pid_key]['color'])
+    data = req.POST if req.method == 'POST' else req.GET
+    color, size = _normalise_variant(product, data.get('color'), data.get('size'))
+    missing = []
+    if product.get_colors() and not color: missing.append('color')
+    if product.size_list and not size: missing.append('size')
+    if missing:
+        messages.warning(req, 'Please select ' + ' and '.join(missing) + ' before adding this product to your cart.')
+        return redirect('store:product_detail', slug=product.slug)
 
-            return redirect('store:cart')
-        except Product.DoesNotExist:
-            pass
-    return redirect('store:home')
+    cart = req.session.get('cart', {})
+    if not isinstance(cart, dict): cart = {}
+    key = _cart_key(product.id, color, size)
+    existing = cart.get(key, {})
+    current_qty = existing.get('quantity', 0) if isinstance(existing, dict) else existing
+    try: current_qty = max(0, int(float(current_qty)))
+    except (TypeError, ValueError): current_qty = 0
+    new_qty = min(product.stock, current_qty + 1)
+    cart[key] = {'quantity': new_qty, 'color': color, 'size': size}
+    req.session['cart'] = cart
+    req.session.modified = True
+    if req.user.is_authenticated:
+        _sync_shared_cart_item(req.user, product, new_qty, color, size)
+    messages.success(req, f'✓ {product.name} added to your cart.')
+    return redirect('store:cart')
+
 
 @login_required
 def cart(req):
-    """Display items in cart safely"""
-
     raw_cart = req.session.get('cart', {})
+    if not isinstance(raw_cart, dict): raw_cart = {}
+    cart_items, cart_total, cart_count, clean_cart = [], Decimal('0.00'), 0, {}
 
-    # Ensure cart is always a dictionary
-    if not isinstance(raw_cart, dict):
-        raw_cart = {}
-
-    cart_items = []
-    cart_total = Decimal('0.00')
-    cart_count = 0
-    clean_cart = {}
-
-    for pid, item_data in raw_cart.items():
+    for raw_key, item_data in raw_cart.items():
         try:
-            product = Product.objects.get(id=int(pid))
-
-            # Default values
-            quantity = 1
-            color = ''
-
-            # Handle dictionary structure
+            pid, key_color, key_size = _parse_cart_key(raw_key)
+            product = Product.objects.get(id=int(_parse_cart_key(pid)[0]), is_active=True)
+            color, size = key_color, key_size
+            quantity = item_data.get('quantity', 1) if isinstance(item_data, dict) else item_data
             if isinstance(item_data, dict):
-                quantity = item_data.get('quantity', 1)
-                color = item_data.get('color', '')
-
-            # Handle old integer structure
-            elif isinstance(item_data, (int, float)):
-                quantity = item_data
-
-            # Flatten corrupted nested dictionaries
-            while isinstance(quantity, dict):
-                quantity = quantity.get('quantity', 1)
-
-            # Convert safely to integer
-            try:
-                quantity = int(quantity)
-                if quantity < 1:
-                    quantity = 1
-            except:
-                quantity = 1
-
-            # Safe Decimal multiplication
+                color = str(item_data.get('color', color) or color).strip()
+                size = str(item_data.get('size', size) or size).strip()
+            while isinstance(quantity, dict): quantity = quantity.get('quantity', 1)
+            quantity = max(1, int(float(quantity)))
+            color, size = _normalise_variant(product, color, size)
+            key = _cart_key(product.id, color, size)
             subtotal = product.price * Decimal(str(quantity))
-
-            cart_items.append({
-                'product': product,
-                'quantity': quantity,
-                'color_variant': color,
-                'total_price': subtotal,
-            })
-
-            cart_total += subtotal
-            cart_count += quantity
-
-            # Save cleaned structure
-            clean_cart[str(pid)] = {
-                'quantity': quantity,
-                'color': color
-            }
-
-        except Product.DoesNotExist:
+            cart_items.append({'key': key, 'product': product, 'quantity': quantity, 'color_variant': color, 'size_variant': size, 'total_price': subtotal})
+            cart_total += subtotal; cart_count += quantity
+            clean_cart[key] = {'quantity': quantity, 'color': color, 'size': size}
+        except (Product.DoesNotExist, ValueError, TypeError):
             continue
 
-        except Exception as e:
-            print("Cart Error:", e)
-            continue
-
-    # Auto-fix corrupted session cart
     if clean_cart != raw_cart:
-        req.session['cart'] = clean_cart
-        req.session.modified = True
+        req.session['cart'] = clean_cart; req.session.modified = True
 
-    # 🎁 Shared cart: items other people (who share a cart with this user)
-    # have added — visible so they can be bought as a surprise gift, but
-    # never shows anything about what's already been purchased.
-    my_product_ids = {int(pid) for pid in clean_cart.keys()}
-    shared_items = []
+    my_keys = set(clean_cart.keys()); shared_items = []
     for shared_cart in _cart_groups_shared_with_me(req.user):
-        for ci in shared_cart.items.select_related('product', 'added_by').exclude(product_id__in=my_product_ids):
-            shared_items.append({
-                'product': ci.product,
-                'quantity': ci.quantity,
-                'color_variant': ci.color,
-                'added_by': ci.added_by,
-            })
+        for ci in shared_cart.items.select_related('product', 'added_by'):
+            key = _cart_key(ci.product_id, ci.color, ci.size)
+            if key not in my_keys:
+                shared_items.append({'key': key, 'product': ci.product, 'quantity': ci.quantity, 'color_variant': ci.color, 'size_variant': ci.size, 'added_by': ci.added_by})
 
-    invite_form = CartInviteForm()
-    pending_invites = CartInvite.objects.filter(inviter=req.user, status='pending')
-
-    return render(req, 'store/cart.html', {
-        'cart_items': cart_items,
-        'cart_total': cart_total,
-        'cart_count': cart_count,
-        'shared_items': shared_items,
-        'invite_form': invite_form,
-        'pending_invites': pending_invites,
-    })
+    return render(req, 'store/cart.html', {'cart_items': cart_items, 'cart_total': cart_total, 'cart_count': cart_count, 'shared_items': shared_items, 'invite_form': CartInviteForm(), 'pending_invites': CartInvite.objects.filter(inviter=req.user, status='pending')})
 
 
 @login_required
@@ -1017,60 +964,46 @@ def cart_view(req):
     })
 
 def update_cart(req):
-    if req.method != 'POST':
-        return JsonResponse({'success': False, 'error': 'Invalid method'})
-        
+    if req.method != 'POST': return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
     try:
-        import json
         data = json.loads(req.body)
-        pid = str(data.get('product_id'))
-        color = data.get('color')
-        change = data.get('change')
-        
+        old_key = str(data.get('cart_key') or '')
+        pid, old_color, old_size = _parse_cart_key(old_key)
+        product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
         cart = req.session.get('cart', {})
-        if not isinstance(cart, dict):
-            cart = {}
-            
-        if pid not in cart:
+        if not isinstance(cart, dict) or old_key not in cart:
             return JsonResponse({'success': False, 'error': 'Item not in cart'})
-            
-        item = cart[pid]
-        # Extract current qty safely
-        if isinstance(item, int):
-            current_qty = item
-        elif isinstance(item, dict):
-            current_qty = int(item.get('quantity', 1))
+        item = cart[old_key] if isinstance(cart[old_key], dict) else {'quantity': cart[old_key]}
+        try: current_qty = max(1, int(float(item.get('quantity', 1))))
+        except (TypeError, ValueError): current_qty = 1
+        if data.get('change') == 'remove':
+            del cart[old_key]
+            _sync_shared_cart_item(req.user, product, 0, old_color, old_size, remove=True)
         else:
-            current_qty = 1
-            
-        if change == 'remove':
-            del cart[pid]
-        else:
-            new_qty = max(1, current_qty + int(change))
-            new_color = color if color is not None else item.get('color', '')
-            cart[pid] = {
-                'quantity': new_qty,
-                'color': new_color
-            }
-            
-        req.session['cart'] = cart
-        req.session.modified = True
-
-        if req.user.is_authenticated:
-            try:
-                product = Product.objects.get(id=int(pid))
-                if change == 'remove':
-                    _sync_shared_cart_item(req.user, product, remove=True)
-                else:
-                    _sync_shared_cart_item(req.user, product, new_qty, new_color)
-            except Product.DoesNotExist:
-                pass
-        
-        new_count = sum(int(i.get('quantity', 1)) if isinstance(i, dict) else i for i in cart.values())
-        return JsonResponse({'success': True, 'count': new_count})
-        
+            try: new_qty = max(1, min(product.stock, current_qty + int(data.get('change', 0))))
+            except (TypeError, ValueError): new_qty = current_qty
+            color, size = _normalise_variant(product, data.get('color', old_color), data.get('size', old_size))
+            if product.get_colors() and not color: return JsonResponse({'success': False, 'error': 'Please select a color.'})
+            if product.size_list and not size: return JsonResponse({'success': False, 'error': 'Please select a size.'})
+            new_key = _cart_key(product.id, color, size)
+            if new_key != old_key:
+                del cart[old_key]
+                existing = cart.get(new_key, {})
+                existing_qty = existing.get('quantity', 0) if isinstance(existing, dict) else existing
+                try: existing_qty = max(0, int(float(existing_qty)))
+                except (TypeError, ValueError): existing_qty = 0
+                new_qty = min(product.stock, new_qty + existing_qty)
+                _sync_shared_cart_item(req.user, product, 0, old_color, old_size, remove=True)
+            cart[new_key] = {'quantity': new_qty, 'color': color, 'size': size}
+            _sync_shared_cart_item(req.user, product, new_qty, color, size)
+        req.session['cart'] = cart; req.session.modified = True
+        count = sum(int(v.get('quantity', 1)) if isinstance(v, dict) else int(v) for v in cart.values())
+        return JsonResponse({'success': True, 'count': count})
+    except Product.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Product not found.'}, status=404)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)})
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
 # store/views.py
 
 logger = logging.getLogger(__name__)
@@ -1094,15 +1027,17 @@ def checkout(req):
     
     for pid, item_data in cart_data.items():
         try:
-            product = Product.objects.get(id=int(pid))
+            product = Product.objects.get(id=int(_parse_cart_key(pid)[0]))
             
             quantity = 1
             color = ''
+            size = ''
             
             # Handle dictionary structure
             if isinstance(item_data, dict):
                 quantity = item_data.get('quantity', 1)
                 color = item_data.get('color', '')
+                size = item_data.get('size', '')
             # Handle old integer structure
             elif isinstance(item_data, (int, float)):
                 quantity = item_data
@@ -1119,6 +1054,7 @@ def checkout(req):
             except (ValueError, TypeError):
                 quantity = 1
             
+            color, size = _normalise_variant(product, color, size)
             # Safe subtotal calculation
             subtotal = product.price * Decimal(str(quantity))
             
@@ -1126,15 +1062,17 @@ def checkout(req):
                 "product": product,
                 "qty": quantity,
                 "color": color,
+                "size": size,
                 "subtotal": subtotal
             })
             
             total += subtotal
             
             # Save cleaned structure
-            clean_cart[str(pid)] = {
+            clean_cart[_cart_key(product.id, color, size)] = {
                 "quantity": quantity,
-                "color": color
+                "color": color,
+                "size": size
             }
             
         except Product.DoesNotExist:
@@ -1196,7 +1134,7 @@ def initialize_paystack_payment(req):
                     qty = max(1, int(float(item)))
                 
                 # Fetch product and validate
-                product = Product.objects.get(id=int(pid), is_active=True)
+                product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
                 total += product.price * Decimal(qty)
                 valid_items += 1
                 
@@ -1388,7 +1326,7 @@ def paystack_callback(req):
                     qty = max(1, int(float(qty)))
 
                     # Lock row for stock update
-                    product = Product.objects.select_for_update().get(id=int(pid), is_active=True)
+                    product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
                     
                     actual_qty = min(product.stock, qty)
                     if actual_qty > 0:
@@ -1402,6 +1340,8 @@ def paystack_callback(req):
                             quantity=actual_qty,
                             price=product.price,
                             subtotal=line_total,
+                            color=item.get('color', '') if isinstance(item, dict) else '',
+                            size=item.get('size', '') if isinstance(item, dict) else '',
                         )
                         total_calculated += line_total
                         items_processed += 1
@@ -1524,7 +1464,7 @@ def verify_paystack_payment(req):
                         size = ''
 
                     # select_for_update() MUST be inside transaction.atomic()
-                    product = Product.objects.select_for_update().get(id=int(pid), is_active=True)
+                    product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
 
                     if product.stock < qty:
                         messages.warning(req, f"⚠️ {product.name} has limited stock. Quantity adjusted.")
@@ -1559,7 +1499,7 @@ def verify_paystack_payment(req):
         # Clear cart
         for pid in cart_data.keys():
             try:
-                product = Product.objects.get(id=int(pid))
+                product = Product.objects.get(id=int(_parse_cart_key(pid)[0]))
                 _remove_from_any_shared_cart(req.user, product)
             except Exception:
                 pass
@@ -2357,80 +2297,70 @@ def get_regions_by_country(req):
 @login_required
 def product_detail(req, slug):
     product = get_object_or_404(Product, slug=slug, is_active=True)
-    
-    # 1️⃣ Supabase profile fetch
     seller_prof = get_supabase_prof(product.seller.user_id) if product.seller else None
-    
-    # 2️⃣ WhatsApp Retrieval & Formatting
     whatsapp_raw = None
-    
-    # Priority A: Supabase profile data
-    if seller_prof:
-        whatsapp_raw = seller_prof.get('whatsapp') or seller_prof.get('phone')
-        
-    # Priority B: Fallback to Django SellerProfile
+    if seller_prof: whatsapp_raw = seller_prof.get('whatsapp') or seller_prof.get('phone')
     if not whatsapp_raw and product.seller:
         seller_obj = getattr(product.seller, 'seller_profile', None) or product.seller
         whatsapp_raw = getattr(seller_obj, 'whatsapp', None) or getattr(seller_obj, 'phone', None)
-        
-    # Format for WhatsApp API
-    whatsapp_api_id = None
-    whatsapp_display = None
-    
+    whatsapp_api_id = whatsapp_display = None
     if whatsapp_raw:
         clean_digits = re.sub(r'[^\d]', '', str(whatsapp_raw))
         if clean_digits:
-            if not clean_digits.startswith('233'):
-                clean_digits = '233' + clean_digits.lstrip('0')
-            whatsapp_api_id = clean_digits
-            whatsapp_display = f"+{clean_digits}"
-    
-    # 3️⃣ Fetch related products
-    related_products = Product.objects.filter(
-        category=product.category,
-        is_active=True,
-        stock__gt=0
-    ).exclude(id=product.id).order_by('-created_at')[:4]
-    
-    # ✅ 4️⃣ FETCH REVIEWS FOR THIS PRODUCT (The missing piece!)
-    reviews = Review.objects.filter(
-        product=product
-    ).filter(
-        # Show approved reviews OR the current user's own pending reviews
-        Q(is_approved=True) | Q(user=req.user)
-    ).order_by('-created_at')
-    
-    # 5️⃣ Handle review submission
-    if req.method == "POST" and req.user.is_authenticated:
-        rating = req.POST.get("rating")
-        comment = req.POST.get("comment", "").strip()
-        
-        if rating and comment:
-            Review.objects.update_or_create(
-                user=req.user, 
-                product=product,
-                defaults={
-                    "rating": int(rating), 
-                    "comment": comment
-                    # Add "is_approved": False here if you want moderation
-                }
-            )
-            messages.success(req, "✅ Review submitted!")
-        
-        # ✅ Redirect to avoid duplicate submissions on page refresh
-        return redirect("store:product_detail", slug=slug)
-    
-    # 6️⃣ Render with ALL context including reviews
-    return render(req, "store/product_detail.html", {
-        "product": product,
-        "seller_prof": seller_prof,
-        "related_products": related_products,
-        "reviews": reviews,  # ✅ Now properly defined and passed
-        "whatsapp_number": whatsapp_api_id,
-        "whatsapp_display": whatsapp_display,
-        "whatsapp_available": bool(whatsapp_api_id),
-        "seller_name": seller_prof.get('store_name') if seller_prof else getattr(product.seller, 'store_name', 'Seller'),
-    })
+            if not clean_digits.startswith('233'): clean_digits = '233' + clean_digits.lstrip('0')
+            whatsapp_api_id, whatsapp_display = clean_digits, f'+{clean_digits}'
+    related_products = Product.objects.filter(category=product.category, is_active=True, stock__gt=0).exclude(id=product.id).order_by('-created_at')[:4]
+    reviews = Review.objects.filter(product=product).filter(Q(is_approved=True) | Q(user=req.user)).select_related('user').order_by('-created_at')
+
+    if req.method == 'POST':
+        rating = req.POST.get('rating'); comment = req.POST.get('comment', '').strip(); image = req.FILES.get('image')
+        try: rating_value = int(rating)
+        except (TypeError, ValueError): rating_value = 0
+        if not 1 <= rating_value <= 5:
+            messages.error(req, 'Please select a rating from 1 to 5 stars.'); return redirect('store:product_detail', slug=slug)
+        if not comment:
+            messages.error(req, 'Please enter review text.'); return redirect('store:product_detail', slug=slug)
+        if image and image.size > 5 * 1024 * 1024:
+            messages.error(req, 'Review photos must be 5 MB or smaller.'); return redirect('store:product_detail', slug=slug)
+        review, _ = Review.objects.update_or_create(user=req.user, product=product, defaults={'rating': rating_value, 'comment': comment})
+        if image:
+            try:
+                from PIL import Image
+                from io import BytesIO
+                src = Image.open(image).convert('RGB')
+                target_w, target_h = 350, 450
+                src_ratio, target_ratio = src.width / src.height, target_w / target_h
+                if src_ratio > target_ratio:
+                    new_w = int(src.height * target_ratio); left = (src.width - new_w) // 2; src = src.crop((left, 0, left + new_w, src.height))
+                else:
+                    new_h = int(src.width / target_ratio); top = (src.height - new_h) // 2; src = src.crop((0, top, src.width, top + new_h))
+                src = src.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                out = BytesIO(); src.save(out, format='JPEG', quality=88, optimize=True)
+                photo_bytes = out.getvalue()
+
+                # Store the processed review photo in Supabase Storage instead of
+                # Railway/local media. The bucket is the existing public `review` bucket.
+                supabase = get_supabase_client()
+                bucket_name = 'review'
+                storage_path = f"reviews/{req.user.id}/review_{product.id}_{uuid.uuid4().hex}.jpg"
+                supabase.storage.from_(bucket_name).upload(
+                    storage_path,
+                    photo_bytes,
+                    {
+                        'content-type': 'image/jpeg',
+                        'cache-control': '31536000',
+                        'upsert': 'true',
+                    }
+                )
+                public_url = supabase.storage.from_(bucket_name).get_public_url(storage_path)
+                review.review_image_url = str(public_url)
+                review.save(update_fields=['review_image_url'])
+            except Exception as exc:
+                logging.exception('Review photo upload failed: %s', exc)
+                messages.error(req, 'The review photo could not be processed. Please upload a valid image.'); return redirect('store:product_detail', slug=slug)
+        messages.success(req, '✅ Review submitted!'); return redirect('store:product_detail', slug=slug)
+
+    return render(req, 'store/product_detail.html', {'product': product, 'seller_prof': seller_prof, 'related_products': related_products, 'reviews': reviews, 'whatsapp_number': whatsapp_api_id, 'whatsapp_display': whatsapp_display, 'whatsapp_available': bool(whatsapp_api_id), 'seller_name': seller_prof.get('store_name') if seller_prof else getattr(product.seller, 'store_name', 'Seller')})
 
 
 @login_required

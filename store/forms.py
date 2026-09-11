@@ -226,7 +226,7 @@ from .models import Review
 class ReviewForm(forms.ModelForm):
     class Meta:
         model = Review
-        fields = ['rating', 'comment']
+        fields = ['rating', 'comment', 'image']
         widgets = {
             'rating': forms.NumberInput(attrs={
                 'class': 'form-control', 
@@ -238,7 +238,8 @@ class ReviewForm(forms.ModelForm):
                 'class': 'form-control', 
                 'rows': 3, 
                 'placeholder': 'Share your experience...'
-            })
+            }),
+            'image': forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': 'image/*'})
         }
 
 

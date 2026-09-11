@@ -118,9 +118,8 @@
                         <div>
                             <h6 class="fw-bold mb-1">{{ item.product.name }}</h6>
                             <small class="text-muted">Qty: {{ item.qty }} × GH₵{{ item.product.price }}</small>
-                            {% if item.color %}
-                            <small class="text-muted d-block">Color: {{ item.color }}</small>
-                            {% endif %}
+                            {% if item.color %}<small class="text-muted d-block">Color: {{ item.color }}</small>{% endif %}
+                            {% if item.size %}<small class="text-muted d-block">Size: {{ item.size }}</small>{% endif %}
                         </div>
                     </div>
                     <span class="fw-bold">GH₵{{ item.subtotal|floatformat:2 }}</span>

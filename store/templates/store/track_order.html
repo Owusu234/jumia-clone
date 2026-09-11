@@ -101,7 +101,7 @@
                     <tbody>
                         {% for item in order.items.all %}
                         <tr>
-                            <td>{{ item.product.name }}</td>
+                            <td>{{ item.product.name }}{% if item.color %}<small class="text-muted d-block">Color: {{ item.color }}</small>{% endif %}{% if item.size %}<small class="text-muted d-block">Size: {{ item.size }}</small>{% endif %}</td>
                             <td class="text-end">{{ item.quantity }}</td>
                             <td class="text-end">GH₵{{ item.price|floatformat:2 }}</td>
                         </tr>
