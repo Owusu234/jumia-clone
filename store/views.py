@@ -967,38 +967,39 @@ def update_cart(req):
     if req.method != 'POST': return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
     try:
         data = json.loads(req.body)
-        old_key = str(data.get('cart_key') or '')
-        pid, old_color, old_size = _parse_cart_key(old_key)
-        product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
-        cart = req.session.get('cart', {})
-        if not isinstance(cart, dict) or old_key not in cart:
-            return JsonResponse({'success': False, 'error': 'Item not in cart'})
-        item = cart[old_key] if isinstance(cart[old_key], dict) else {'quantity': cart[old_key]}
-        try: current_qty = max(1, int(float(item.get('quantity', 1))))
-        except (TypeError, ValueError): current_qty = 1
-        if data.get('change') == 'remove':
-            del cart[old_key]
-            _sync_shared_cart_item(req.user, product, 0, old_color, old_size, remove=True)
-        else:
-            try: new_qty = max(1, min(product.stock, current_qty + int(data.get('change', 0))))
-            except (TypeError, ValueError): new_qty = current_qty
-            color, size = _normalise_variant(product, data.get('color', old_color), data.get('size', old_size))
-            if product.get_colors() and not color: return JsonResponse({'success': False, 'error': 'Please select a color.'})
-            if product.size_list and not size: return JsonResponse({'success': False, 'error': 'Please select a size.'})
-            new_key = _cart_key(product.id, color, size)
-            if new_key != old_key:
+        with transaction.atomic():
+            old_key = str(data.get('cart_key') or '')
+            pid, old_color, old_size = _parse_cart_key(old_key)
+            product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
+            cart = req.session.get('cart', {})
+            if not isinstance(cart, dict) or old_key not in cart:
+                return JsonResponse({'success': False, 'error': 'Item not in cart'})
+            item = cart[old_key] if isinstance(cart[old_key], dict) else {'quantity': cart[old_key]}
+            try: current_qty = max(1, int(float(item.get('quantity', 1))))
+            except (TypeError, ValueError): current_qty = 1
+            if data.get('change') == 'remove':
                 del cart[old_key]
-                existing = cart.get(new_key, {})
-                existing_qty = existing.get('quantity', 0) if isinstance(existing, dict) else existing
-                try: existing_qty = max(0, int(float(existing_qty)))
-                except (TypeError, ValueError): existing_qty = 0
-                new_qty = min(product.stock, new_qty + existing_qty)
                 _sync_shared_cart_item(req.user, product, 0, old_color, old_size, remove=True)
-            cart[new_key] = {'quantity': new_qty, 'color': color, 'size': size}
-            _sync_shared_cart_item(req.user, product, new_qty, color, size)
-        req.session['cart'] = cart; req.session.modified = True
-        count = sum(int(v.get('quantity', 1)) if isinstance(v, dict) else int(v) for v in cart.values())
-        return JsonResponse({'success': True, 'count': count})
+            else:
+                try: new_qty = max(1, min(product.stock, current_qty + int(data.get('change', 0))))
+                except (TypeError, ValueError): new_qty = current_qty
+                color, size = _normalise_variant(product, data.get('color', old_color), data.get('size', old_size))
+                if product.get_colors() and not color: return JsonResponse({'success': False, 'error': 'Please select a color.'})
+                if product.size_list and not size: return JsonResponse({'success': False, 'error': 'Please select a size.'})
+                new_key = _cart_key(product.id, color, size)
+                if new_key != old_key:
+                    del cart[old_key]
+                    existing = cart.get(new_key, {})
+                    existing_qty = existing.get('quantity', 0) if isinstance(existing, dict) else existing
+                    try: existing_qty = max(0, int(float(existing_qty)))
+                    except (TypeError, ValueError): existing_qty = 0
+                    new_qty = min(product.stock, new_qty + existing_qty)
+                    _sync_shared_cart_item(req.user, product, 0, old_color, old_size, remove=True)
+                cart[new_key] = {'quantity': new_qty, 'color': color, 'size': size}
+                _sync_shared_cart_item(req.user, product, new_qty, color, size)
+            req.session['cart'] = cart; req.session.modified = True
+            count = sum(int(v.get('quantity', 1)) if isinstance(v, dict) else int(v) for v in cart.values())
+            return JsonResponse({'success': True, 'count': count})
     except Product.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Product not found.'}, status=404)
     except Exception as e:
@@ -1121,29 +1122,30 @@ def initialize_paystack_payment(req):
         total = Decimal('0')
         valid_items = 0
         
-        for pid, item in cart_data.items():
-            try:
-                # Extract quantity (handle both simple and nested dict formats)
-                if isinstance(item, dict):
-                    qty = item.get('quantity', 1)
-                    # Handle deeply nested dicts (defensive programming)
-                    while isinstance(qty, dict):
-                        qty = qty.get('quantity', 1)
-                    qty = max(1, int(float(qty)))
-                else:
-                    qty = max(1, int(float(item)))
-                
-                # Fetch product and validate
-                product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
-                total += product.price * Decimal(qty)
-                valid_items += 1
-                
-            except Product.DoesNotExist:
-                logger.warning(f"Product {pid} not found or inactive, skipping")
-                continue
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Invalid quantity for product {pid}: {e}")
-                continue
+        with transaction.atomic():
+            for pid, item in cart_data.items():
+                try:
+                    # Extract quantity (handle both simple and nested dict formats)
+                    if isinstance(item, dict):
+                        qty = item.get('quantity', 1)
+                        # Handle deeply nested dicts (defensive programming)
+                        while isinstance(qty, dict):
+                            qty = qty.get('quantity', 1)
+                        qty = max(1, int(float(qty)))
+                    else:
+                        qty = max(1, int(float(item)))
+                    
+                    # Fetch product and validate
+                    product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
+                    total += product.price * Decimal(qty)
+                    valid_items += 1
+                    
+                except Product.DoesNotExist:
+                    logger.warning(f"Product {pid} not found or inactive, skipping")
+                    continue
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Invalid quantity for product {pid}: {e}")
+                    continue
         
         # Validate we have valid items and positive total
         if valid_items == 0 or total <= 0:
