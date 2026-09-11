@@ -733,15 +733,21 @@ def _normalise_variant(product, color='', size=''):
     if product.size_list and size not in product.size_list: size = ''
     return color, size
 
+@require_POST
 def add_to_cart(req, product_id):
-    if req.method not in ('GET', 'POST'):
-        return redirect('store:home')
+    # Adding to cart mutates the session (and the shared cart in the DB), so
+    # this must be POST-only. It used to also accept GET via a plain <a
+    # href> link — but a GET here isn't just semantically wrong, it also
+    # means any speculative prefetch of that link (e.g. Chrome's "preload
+    # pages" hover-prefetch, link-preview bots, etc.) silently adds the item
+    # to the cart before the user even clicks, so the real click on top of
+    # that made quantity land on 2 instead of 1.
     product = get_object_or_404(Product, id=product_id, is_active=True)
     if product.stock <= 0:
         messages.warning(req, 'This product is out of stock.')
         return redirect('store:product_detail', slug=product.slug)
 
-    data = req.POST if req.method == 'POST' else req.GET
+    data = req.POST
     color, size = _normalise_variant(product, data.get('color'), data.get('size'))
     missing = []
     if product.get_colors() and not color: missing.append('color')
