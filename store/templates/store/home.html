@@ -313,11 +313,11 @@
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="product-price">GH₵{{ p.price }}</span>
                         {% if p.stock > 10 %}
-                            <span class="stock-badge stock-ok">In Stock</span>
+                            <span class="stock-badge stock-ok d-none d-md-inline-block">In Stock</span>
                         {% elif p.stock > 0 %}
-                            <span class="stock-badge stock-low">Low</span>
+                            <span class="stock-badge stock-low d-none d-md-inline-block">Low</span>
                         {% else %}
-                            <span class="stock-badge stock-out">Out</span>
+                            <span class="stock-badge stock-out d-none d-md-inline-block">Out</span>
                         {% endif %}
                     </div>
                     {% if p.seller %}
@@ -335,6 +335,17 @@
                         {% if p.warranty %}<div><i class="bi bi-shield-check me-1"></i><strong>Warranty:</strong> {{ p.warranty }}</div>{% endif %}
                     </div>
                     {% endif %}
+
+                    <!-- Stock status, mobile only — shown just above the Add to cart button -->
+                    <div class="d-md-none mb-2">
+                        {% if p.stock > 10 %}
+                            <span class="stock-badge stock-ok">In Stock</span>
+                        {% elif p.stock > 0 %}
+                            <span class="stock-badge stock-low">Low</span>
+                        {% else %}
+                            <span class="stock-badge stock-out">Out</span>
+                        {% endif %}
+                    </div>
 
                     <div class="mt-auto d-grid gap-2">
                         {% if p.stock > 0 %}
