@@ -132,8 +132,9 @@
 <script>
 function copyCartLink(url, btn) {
   navigator.clipboard.writeText(url).then(() => {
-    btn.innerHTML = '✓ Link copied!';
-    setTimeout(() => { btn.innerHTML = '<i class="bi bi-link-45deg me-1"></i>Copy share link'; }, 2500);
+    btn.innerHTML = '<i class="bi bi-share me-1"></i>Share Cart';
+    btn.classList.remove('btn-outline-primary');
+    btn.classList.add('btn-primary');
   });
 }
 document.getElementById('shareCartBtn')?.addEventListener('click', async function () {
@@ -149,8 +150,9 @@ document.getElementById('shareCartBtn')?.addEventListener('click', async functio
     });
     const data = await res.json();
     await navigator.clipboard.writeText(data.url);
-    btn.innerHTML = '✓ Link copied!';
-    btn.classList.replace('btn-primary', 'btn-success');
+    btn.innerHTML = '<i class="bi bi-share me-1"></i>Share Cart';
+    btn.classList.remove('btn-success');
+    btn.classList.add('btn-primary');
   } catch (e) {
     btn.innerHTML = 'Try again';
   }

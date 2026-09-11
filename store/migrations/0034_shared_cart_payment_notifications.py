@@ -1,0 +1,31 @@
+from django.conf import settings
+from django.db import migrations, models
+import django.db.models.deletion
+
+
+class Migration(migrations.Migration):
+    dependencies = [('store', '0033_shared_cart_link')]
+
+    operations = [
+        migrations.AddField(
+            model_name='order',
+            name='paid_by',
+            field=models.ForeignKey(
+                blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL,
+                related_name='paid_orders', to=settings.AUTH_USER_MODEL
+            ),
+        ),
+        migrations.CreateModel(
+            name='UserNotification',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('title', models.CharField(max_length=200)),
+                ('message', models.TextField()),
+                ('link', models.CharField(blank=True, default='#', max_length=500)),
+                ('is_read', models.BooleanField(default=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='store_notifications', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={'ordering': ['-created_at'], 'indexes': [models.Index(fields=['user', 'is_read', '-created_at'], name='store_userno_user_id_9e8e5b_idx')]},
+        ),
+    ]

@@ -21,12 +21,22 @@
           </small>
         </div>
         <strong>₵{{ entry.subtotal }}</strong>
-        <form method="post" action="{% url 'store:add_to_cart' entry.item.product.id %}">
-          {% csrf_token %}
-          <input type="hidden" name="color" value="{{ entry.item.color }}">
-          <input type="hidden" name="size" value="{{ entry.item.size }}">
-          <button class="btn btn-primary btn-sm"><i class="bi bi-bag-plus me-1"></i>Add to my cart</button>
-        </form>
+        {% if user.is_authenticated %}
+        <div class="d-flex gap-2 flex-wrap">
+          <form method="post" action="{% url 'store:start_shared_cart_purchase' link.token 'gift' %}">
+            {% csrf_token %}
+            <input type="hidden" name="item_id" value="{{ entry.item.id }}">
+            <button class="btn btn-primary btn-sm"><i class="bi bi-gift me-1"></i>Purchase for them</button>
+          </form>
+          <form method="post" action="{% url 'store:start_shared_cart_purchase' link.token 'self' %}">
+            {% csrf_token %}
+            <input type="hidden" name="item_id" value="{{ entry.item.id }}">
+            <button class="btn btn-outline-primary btn-sm"><i class="bi bi-bag-plus me-1"></i>Buy for me</button>
+          </form>
+        </div>
+        {% else %}
+        <a href="{% url 'store:login' %}" class="btn btn-primary btn-sm">Login to purchase</a>
+        {% endif %}
       </div>
     </div>
     {% endfor %}

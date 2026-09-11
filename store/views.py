@@ -37,7 +37,7 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-from .models import Product, Category, Cart, CartItem, SharedCartLink, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView
+from .models import Product, Category, Cart, CartItem, SharedCartLink, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
 from django.core.files.base import ContentFile
 from django.http import JsonResponse
@@ -729,6 +729,40 @@ def share_cart(req):
     messages.success(req, f"🔗 Your shared cart link: {url}")
     return redirect('store:cart')
 
+@login_required
+@require_POST
+def start_shared_cart_purchase(req, token, action):
+    """Put one item from a shared cart into the payer's session checkout.
+    action='gift' means the shared-cart owner receives the order; action='self'
+    means the person opening the link receives it themselves."""
+    link = get_object_or_404(SharedCartLink, token=token, is_active=True)
+    item_id = req.POST.get('item_id')
+    item = get_object_or_404(
+        CartItem.objects.select_related('product', 'cart__user'),
+        id=item_id, cart__user=link.owner, product__is_active=True
+    )
+    if item.product.stock < item.quantity:
+        messages.error(req, 'Sorry, there is not enough stock available for this item.')
+        return redirect('store:shared_cart', token=token)
+
+    # A fresh checkout session prevents an existing buyer cart from being mixed
+    # into a gift purchase.
+    color, size = _normalise_variant(item.product, item.color, item.size)
+    req.session['cart'] = {
+        _cart_key(item.product.id, color, size): {
+            'quantity': item.quantity, 'color': color, 'size': size
+        }
+    }
+    req.session['shared_purchase'] = {
+        'owner_id': link.owner_id,
+        'payer_id': req.user.id,
+        'action': 'gift' if action == 'gift' else 'self',
+        'source_item_id': item.id,
+        'token': str(token),
+    }
+    req.session.modified = True
+    return redirect('store:checkout')
+
 def shared_cart(req, token):
     """Anyone with the link can view the owner's current cart. Purchases are
     private: bought items simply vanish from this view."""
@@ -1068,14 +1102,21 @@ def checkout(req):
     import json
     cart_json = json.dumps(clean_cart, default=str)
     
+    shared_purchase = req.session.get('shared_purchase')
+    gift_recipient = None
+    if isinstance(shared_purchase, dict) and shared_purchase.get('action') == 'gift':
+        gift_recipient = User.objects.filter(id=shared_purchase.get('owner_id')).first()
+
     return render(req, "store/checkout.html", {
         "items": items,
         "total": total,
         "total_kobo": total_kobo,
         "paystack_public_key": settings.PAYSTACK_PUBLIC_KEY,
         "cart_count": len(items),
-        "cart_json": cart_json,  # For JavaScript bridge
-        "site_url": settings.SITE_URL,  # For callback URL
+        "cart_json": cart_json,
+        "site_url": settings.SITE_URL,
+        "shared_purchase": shared_purchase,
+        "gift_recipient": gift_recipient,
     })
 
 
@@ -1126,6 +1167,13 @@ def initialize_paystack_payment(req):
         
         # 3️⃣ Generate unique reference (timestamp + user ID for uniqueness)
         reference = f"SV-{req.user.id}-{int(timezone.now().timestamp())}-{valid_items}"
+        shared_purchase = req.session.get('shared_purchase')
+        gift_recipient = None
+        if isinstance(shared_purchase, dict) and shared_purchase.get('action') == 'gift':
+            gift_recipient = User.objects.filter(id=shared_purchase.get('owner_id')).first()
+            if not gift_recipient:
+                req.session.pop('shared_purchase', None)
+                return JsonResponse({'error': 'The shared-cart recipient is no longer available.'}, status=400)
         
         # 4️⃣ Build Paystack payload with ALL required fields
         payload = {
@@ -1137,7 +1185,11 @@ def initialize_paystack_payment(req):
                 'user_id': req.user.id,
                 'username': req.user.username,
                 'items_count': valid_items,
-                'cart_total_ghs': str(total),  # Store as string to preserve decimal precision
+                'cart_total_ghs': str(total),
+                'shared_purchase': bool(shared_purchase),
+                'recipient_user_id': gift_recipient.id if gift_recipient else req.user.id,
+                'recipient_username': gift_recipient.username if gift_recipient else req.user.username,
+                'purchase_type': 'gift' if gift_recipient else 'self',
             },
             'currency': 'GHS',  # ✅ Explicitly set currency for Ghana
         }
@@ -1280,8 +1332,14 @@ def paystack_callback(req):
             if Order.objects.filter(reference=reference).exists():
                 return JsonResponse({'success': True, 'message': 'Order already exists'})
 
+            shared_purchase = req.session.get('shared_purchase')
+            gift_recipient = None
+            if isinstance(shared_purchase, dict) and shared_purchase.get('action') == 'gift':
+                gift_recipient = User.objects.filter(id=shared_purchase.get('owner_id')).first()
+
             order = Order.objects.create(
-                user=req.user if req.user.is_authenticated else None,
+                user=gift_recipient or req.user,
+                paid_by=req.user,
                 reference=reference,
                 total_amount=paid_amount_ghs,
                 payment_status='paid',
@@ -1329,8 +1387,32 @@ def paystack_callback(req):
                 order.total_amount = total_calculated
                 order.save(update_fields=['total_amount'])
 
+        # Shared-cart gift: the recipient owns the order, while the payer remains
+        # recorded separately. Notify the recipient and each affected seller,
+        # explicitly naming the recipient (sender) in the seller message.
+        if isinstance(shared_purchase, dict) and shared_purchase.get('action') == 'gift' and gift_recipient:
+            UserNotification.objects.create(
+                user=gift_recipient,
+                title='🎁 Shared-cart payment received',
+                message=f'{req.user.username} has made payment for an item from your shared cart. Order #{order.id} is now in your orders.',
+                link=reverse('store:order_receipt', args=[order.id]),
+            )
+            seller_ids = set()
+            for oi in order.items.select_related('product__seller').all():
+                seller = getattr(oi.product, 'seller', None)
+                if seller and getattr(seller, 'user_id', None):
+                    seller_ids.add(seller.user_id)
+            for seller_user_id in seller_ids:
+                UserNotification.objects.create(
+                    user_id=seller_user_id,
+                    title='💳 Payment received for shared-cart order',
+                    message=f'{req.user.username} made payment for {gift_recipient.username} (the shared-cart sender). Please process Order #{order.id}.',
+                    link=reverse('store:order_receipt', args=[order.id]),
+                )
+
         # Clear cart session
         req.session['cart'] = {}
+        req.session.pop('shared_purchase', None)
         req.session.pop('paystack_ref', None)
         req.session.pop('paystack_amount', None)
         req.session.modified = True
@@ -1366,9 +1448,12 @@ def verify_paystack_payment(req):
         req.session['cart'] = {}
         req.session.pop('paystack_ref', None)
         req.session.pop('paystack_amount', None)
+        req.session.pop('shared_purchase', None)
         req.session.modified = True
         messages.success(req, f"✅ Payment successful! Order #{existing_order.id} confirmed.")
-        return redirect("store:order_success", order_id=existing_order.id)
+        if existing_order.user_id == req.user.id or existing_order.paid_by_id == req.user.id:
+            return redirect("store:order_success", order_id=existing_order.id)
+        return redirect('store:home')
 
     try:
         verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
@@ -1409,10 +1494,19 @@ def verify_paystack_payment(req):
             messages.error(req, "❌ Cart data not found. Please contact support.")
             return redirect("store:home")
 
+        shared_purchase = req.session.get('shared_purchase')
+        gift_recipient = None
+        if isinstance(shared_purchase, dict) and shared_purchase.get('action') == 'gift':
+            gift_recipient = User.objects.filter(id=shared_purchase.get('owner_id')).first()
+            if not gift_recipient:
+                messages.error(req, 'The shared-cart recipient could not be found.')
+                return redirect('store:cart')
+
         # 2️⃣ Atomic transaction wrapper
         with transaction.atomic():
             order = Order.objects.create(
-                user=req.user,
+                user=gift_recipient or req.user,
+                paid_by=req.user,
                 reference=reference,
                 total_amount=paid_amount_ghs,
                 payment_status='paid',
@@ -1479,13 +1573,36 @@ def verify_paystack_payment(req):
             except Exception:
                 pass
 
+        if isinstance(shared_purchase, dict) and shared_purchase.get('action') == 'gift' and gift_recipient:
+            UserNotification.objects.create(
+                user=gift_recipient,
+                title='🎁 Shared-cart payment received',
+                message=f'{req.user.username} has made payment for your shared-cart item. Order #{order.id} is now in your orders.',
+                link=reverse('store:order_receipt', args=[order.id]),
+            )
+            seller_ids = set()
+            for oi in order.items.select_related('product__seller').all():
+                seller = getattr(oi.product, 'seller', None)
+                if seller and getattr(seller, 'user_id', None):
+                    seller_ids.add(seller.user_id)
+            for seller_user_id in seller_ids:
+                UserNotification.objects.create(
+                    user_id=seller_user_id,
+                    title='💳 Payment received for shared-cart order',
+                    message=f'{req.user.username} made payment for {gift_recipient.username} (the shared-cart sender). Please process Order #{order.id}.',
+                    link=reverse('store:order_receipt', args=[order.id]),
+                )
+
         req.session['cart'] = {}
         req.session.pop('paystack_ref', None)
         req.session.pop('paystack_amount', None)
+        req.session.pop('shared_purchase', None)
         req.session.modified = True
 
         messages.success(req, f"✅ Payment successful! Order #{order.id} confirmed.")
-        return redirect("store:order_success", order_id=order.id)
+        if order.user_id == req.user.id or order.paid_by_id == req.user.id:
+            return redirect("store:order_success", order_id=order.id)
+        return redirect('store:home')
 
     except IntegrityError:
         # Catch duplicate creation attempts gracefully
@@ -1505,7 +1622,9 @@ def verify_paystack_payment(req):
 def order_success(req, order_id):
     """Order success page"""
     try:
-        order = Order.objects.get(id=order_id, user=req.user)
+        order = Order.objects.get(id=order_id)
+        if order.user_id != req.user.id and order.paid_by_id != req.user.id:
+            return redirect('store:home')
         return render(req, "store/order_success.html", {"order": order})
     except Order.DoesNotExist:
         return redirect("store:home")
@@ -2792,6 +2911,11 @@ def mark_notifications_read(request):
 
 
 def is_admin(user): return user.is_staff or user.is_superuser
+
+@login_required
+def mark_user_notifications_read(request):
+    UserNotification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    return redirect(request.META.get('HTTP_REFERER', 'store:home'))
 
 @login_required
 @user_passes_test(is_admin)

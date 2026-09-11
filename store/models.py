@@ -139,6 +139,23 @@ class AdminNotification(models.Model):
     def __str__(self):
         return f"{self.title} ({'Read' if self.is_read else 'Unread'})"
 
+
+class UserNotification(models.Model):
+    """Private notifications shown to the relevant buyer/seller."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='store_notifications')
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    link = models.CharField(max_length=500, blank=True, default='#')
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', 'is_read', '-created_at'])]
+
+    def __str__(self):
+        return f"{self.user.username}: {self.title}"
+
 # ==================== PRODUCTS & CATEGORIES ====================
 
 # store/models.py - Update Category model
@@ -418,6 +435,12 @@ class Order(models.Model):
     paystack_response = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # The account that actually paid for this order. For normal orders this is
+    # the same as `user`; for a shared-cart gift it is the person paying.
+    paid_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='paid_orders'
+    )
     status = models.CharField(max_length=20, default='pending', 
         choices=[
             ('pending', 'Pending'),

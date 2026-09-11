@@ -14,6 +14,7 @@ urlpatterns = [
     # path("complete-profile/", views.complete_profile, name="complete_profile"),
     path("api/regions/", views.get_regions_by_country, name="api_regions"),
     path('admin/notifications/read/', views.mark_notifications_read, name='mark_notifications_read'),
+    path('notifications/read/', views.mark_user_notifications_read, name='mark_user_notifications_read'),
     path("api/chatbot/recommend/", views.chatbot_recommend, name="chatbot_recommend"),
     # ==================== CART (UUID Compatible) ====================
 
@@ -23,6 +24,7 @@ urlpatterns = [
     path('cart/remove/<int:product_id>/', views.remove_from_cart, name='remove_from_cart'),
     path('cart/share/', views.share_cart, name='share_cart'),
     path('cart/shared/<uuid:token>/', views.shared_cart, name='shared_cart'),
+    path('cart/shared/<uuid:token>/purchase/<str:action>/', views.start_shared_cart_purchase, name='start_shared_cart_purchase'),
     path('cart/stop-sharing/', views.stop_sharing_cart, name='stop_sharing_cart'),
     path('cart/', views.cart_view, name='cart'),
     path('admin/seller/<int:seller_id>/approve/', views.approve_seller, name='approve_seller'),

@@ -1,4 +1,4 @@
-from .models import AdminNotification
+from .models import AdminNotification, UserNotification
 
 def global_context(req):
     """Provides cart_count, global variables, and admin notifications to all templates"""
@@ -32,8 +32,18 @@ def global_context(req):
         # 5 most recent unread alerts for dropdown
         context['admin_notifications'] = AdminNotification.objects.filter(is_read=False).order_by('-created_at')[:5]
     else:
-        # Fallback for buyers/guests to prevent template errors
         context['admin_notification_count'] = 0
         context['admin_notifications'] = []
+
+    if req.user.is_authenticated:
+        context['user_notification_count'] = UserNotification.objects.filter(
+            user=req.user, is_read=False
+        ).count()
+        context['user_notifications'] = UserNotification.objects.filter(
+            user=req.user, is_read=False
+        ).order_by('-created_at')[:5]
+    else:
+        context['user_notification_count'] = 0
+        context['user_notifications'] = []
 
     return context

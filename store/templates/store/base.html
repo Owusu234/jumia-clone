@@ -100,6 +100,33 @@
                 </div>
                 {% endif %}
 
+                {% if user.is_authenticated %}
+                <!-- Buyer/Seller Notifications -->
+                <div class="position-relative me-2">
+                    <button class="btn btn-link position-relative border-0 p-1" style="color: var(--tx);" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+                        <i class="bi bi-bell fs-5"></i>
+                        {% if user_notification_count > 0 %}
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem; min-width: 18px; height: 18px; padding: 3px;">{{ user_notification_count }}</span>
+                        {% endif %}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" style="min-width: 320px; max-height: 400px; overflow-y: auto;">
+                        {% if user_notifications %}
+                            {% for notif in user_notifications %}
+                            <li><a class="dropdown-item py-2" href="{{ notif.link }}">
+                                <div class="fw-semibold small">{{ notif.title }}</div>
+                                <div class="text-muted small">{{ notif.message }}</div>
+                                <div class="text-end mt-1"><small class="text-muted">{{ notif.created_at|timesince }} ago</small></div>
+                            </a></li>
+                            {% endfor %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-center text-primary small fw-bold" href="{% url 'store:mark_user_notifications_read' %}">✓ Mark all as read</a></li>
+                        {% else %}
+                            <li><span class="dropdown-item text-muted text-center py-3">No new notifications</span></li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
+
                 <!-- Auth Links -->
                 {% if user.is_authenticated %}
                 <div class="dropdown">
