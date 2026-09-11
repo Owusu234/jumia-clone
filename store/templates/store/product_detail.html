@@ -133,6 +133,21 @@
             </div>
             
             <p class="mb-3">{{ product.description|truncatewords:20 }}</p>
+
+            <!-- Buyer-visible product specifications -->
+            {% if product.colors or product.warranty or product.available_sizes or product.dimensions_display %}
+            <div class="product-specifications card border-theme mb-4">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-info-circle me-2"></i>Product Specifications</h5>
+                    <div class="row g-3">
+                        {% if product.colors %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-palette me-2"></i>Colors</span><span class="spec-value">{{ product.colors }}</span></div></div>{% endif %}
+                        {% if product.warranty %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-shield-check me-2"></i>Warranty</span><span class="spec-value">{{ product.warranty }}</span></div></div>{% endif %}
+                        {% if product.available_sizes %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-rulers me-2"></i>Available Sizes</span><span class="spec-value">{{ product.available_sizes }}</span></div></div>{% endif %}
+                        {% if product.dimensions_display %}<div class="col-12 col-md-6"><div class="spec-item"><span class="spec-label"><i class="bi bi-box me-2"></i>Dimensions</span><span class="spec-value">{{ product.dimensions_display }}</span></div></div>{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             
             <div class="d-grid gap-2">
                 {% if product.stock > 0 %}
@@ -342,6 +357,12 @@
         .btn-back span { display: none; }
         .btn-back i { margin-right: 0; }
     }
+
+    .product-specifications { background: var(--card, var(--bg-card)); }
+    .spec-item { display:flex; flex-direction:column; gap:4px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; height:100%; }
+    .spec-label { font-weight:700; color:var(--text); font-size:.86rem; }
+    .spec-value { color:var(--text-muted); font-size:.9rem; word-break:break-word; }
+    .spec-label i { color:var(--primary); }
 
     /* Product hero image */
     .product-img-wrapper {
