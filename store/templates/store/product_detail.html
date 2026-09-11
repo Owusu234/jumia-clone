@@ -231,7 +231,7 @@
                     </div>
                     <div class="related-actions">
                         {% if rp.stock > 0 %}
-                        <a href="{% url 'store:product_detail' rp.slug %}" class="btn btn-outline-primary btn-add-related">{% if rp.get_colors or rp.size_list %}Choose Options{% else %}View & Add{% endif %}</a>
+                        <a href="{% url 'store:product_detail' rp.slug %}" class="btn btn-outline-primary btn-add-related">{% if rp.get_colors or rp.size_list %}Add to cart{% else %}View & Add{% endif %}</a>
                         {% else %}
                         <button class="btn btn-secondary btn-add-related" disabled>Out of Stock</button>
                         {% endif %}
