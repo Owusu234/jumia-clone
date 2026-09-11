@@ -3,50 +3,24 @@
 
 {% block content %}
 <div class="container py-4">
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <h2 class="fw-bold mb-0">🛒 Your Cart</h2>
-        <a href="{% url 'store:home' %}" class="btn btn-sm btn-outline-primary">
-            <i class="bi bi-arrow-left me-1"></i>Continue Shopping
-        </a>
-    </div>
-
-    <!-- 🎁 Shared Cart: invite someone to see (and shop from) this cart -->
-    <div class="card border-theme bg-card p-3 mb-4">
-        <h6 class="fw-bold mb-2"><i class="bi bi-people me-1"></i>Share this cart</h6>
-        <p class="text-muted small mb-3">Invite someone by email — they'll see what's in your cart (handy for gift shopping), but never what either of you has already bought.</p>
-        <form method="post" action="{% url 'store:invite_to_cart' %}" class="d-flex gap-2 flex-wrap">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+      <h3 class="fw-bold mb-0"><i class="bi bi-cart3 me-2"></i>Your Cart</h3>
+      <div class="d-flex gap-2">
+        {% if share_url %}
+          <button class="btn btn-outline-primary btn-sm" onclick="copyCartLink('{{ share_url|escapejs }}', this)">
+            <i class="bi bi-link-45deg me-1"></i>Copy share link
+          </button>
+          <form method="post" action="{% url 'store:stop_sharing_cart' %}" class="d-inline">
             {% csrf_token %}
-            {{ invite_form.email }}
-            <button type="submit" class="btn btn-outline-primary">Send Invite</button>
-        </form>
-        {% if pending_invites %}
-        <ul class="small text-muted mt-3 mb-0 ps-3">
-            {% for invite in pending_invites %}
-            <li>Invite pending for {{ invite.invited_email }}</li>
-            {% endfor %}
-        </ul>
+            <button class="btn btn-outline-danger btn-sm">Stop sharing</button>
+          </form>
+        {% else %}
+          <button id="shareCartBtn" class="btn btn-primary btn-sm">
+            <i class="bi bi-share me-1"></i>Share Cart
+          </button>
         {% endif %}
+      </div>
     </div>
-
-    {% if shared_items %}
-    <div class="card border-theme bg-card p-3 mb-4">
-        <h6 class="fw-bold mb-3"><i class="bi bi-gift me-1"></i>Shared with you</h6>
-        {% for item in shared_items %}
-        <div class="d-flex align-items-center justify-content-between border-theme border-bottom py-2">
-            <div class="d-flex align-items-center gap-3">
-                <img src="{{ item.product.get_image }}" class="rounded border-theme" style="width: 56px; height: 56px; object-fit: contain; background: #fff;">
-                <div>
-                    <div class="fw-bold small">{{ item.product.name }}</div>
-                    <div class="text-muted small">Qty {{ item.quantity }}{% if item.color_variant %} · Color: {{ item.color_variant }}{% endif %}{% if item.size_variant %} · Size: {{ item.size_variant }}{% endif %}{% if item.added_by %} · added by {{ item.added_by.username }}{% endif %}</div>
-                </div>
-            </div>
-            <a href="{% url 'store:product_detail' item.product.slug %}" class="btn btn-sm btn-outline-success">
-                <i class="bi bi-gift me-1"></i>Choose & Buy
-            </a>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
 
     {% if cart_items %}
     <div class="row g-4">
@@ -154,6 +128,35 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+function copyCartLink(url, btn) {
+  navigator.clipboard.writeText(url).then(() => {
+    btn.innerHTML = '✓ Link copied!';
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-link-45deg me-1"></i>Copy share link'; }, 2500);
+  });
+}
+document.getElementById('shareCartBtn')?.addEventListener('click', async function () {
+  const btn = this;
+  btn.disabled = true;
+  try {
+    const res = await fetch("{% url 'store:share_cart' %}", {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': '{{ csrf_token }}',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    const data = await res.json();
+    await navigator.clipboard.writeText(data.url);
+    btn.innerHTML = '✓ Link copied!';
+    btn.classList.replace('btn-primary', 'btn-success');
+  } catch (e) {
+    btn.innerHTML = 'Try again';
+  }
+  btn.disabled = false;
+});
+</script>
 
 <!--  Cart AJAX Logic -->
 <script>

@@ -251,15 +251,6 @@ class ForgotPasswordForm(forms.Form):
         })
     )
 
-class CartInviteForm(forms.Form):
-    """Invite someone (by email) to share your cart, e.g. so they can see
-    items you've added and surprise-purchase one as a gift."""
-    email = forms.EmailField(
-        widget=forms.EmailInput(attrs={
-            'class': 'form-control',
-            'placeholder': "Invite someone's email to share this cart"
-        })
-    )
 
 
 class ResetPasswordForm(forms.Form):
