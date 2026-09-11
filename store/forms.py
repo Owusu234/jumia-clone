@@ -177,7 +177,10 @@ class ProductUploadForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ['name', 'description', 'price', 'stock', 'category', 'image', 'colors', 'warranty', 'vr_type']
+        fields = [
+            'name', 'description', 'price', 'stock', 'category', 'image', 'colors', 'warranty', 'vr_type',
+            'is_wearable', 'available_sizes', 'length', 'width', 'height',
+        ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Product Name'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 4, 'placeholder': 'Product description...'}),
@@ -194,7 +197,28 @@ class ProductUploadForm(forms.ModelForm):
                 'class': 'form-control', 
                 'placeholder': 'e.g., 1 Year Manufacturer Warranty'
             }),
+            # ── Wearable size / non-wearable dimensions ──
+            'is_wearable': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'isWearableToggle'}),
+            'available_sizes': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'S, M, L, XL  or  39, 40, 41'
+            }),
+            'length': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Length (cm)', 'step': '0.01'}),
+            'width': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Width (cm)', 'step': '0.01'}),
+            'height': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Height (cm)', 'step': '0.01'}),
         }
+
+    def clean(self):
+        """Keep the two branches mutually exclusive: a wearable item shouldn't
+        carry stray dimensions, and a non-wearable item shouldn't carry sizes."""
+        cleaned = super().clean()
+        if cleaned.get('is_wearable'):
+            cleaned['length'] = None
+            cleaned['width'] = None
+            cleaned['height'] = None
+        else:
+            cleaned['available_sizes'] = ''
+        return cleaned
 
 # store/forms.py
 from .models import Review

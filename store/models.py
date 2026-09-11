@@ -254,6 +254,28 @@ class Product(models.Model):
     vr_supabase_path = models.CharField(max_length=500, blank=True, null=True,
         help_text="Supabase storage path for the VR file (GLB or 360 image)")
 
+    # ── Size (wearable) / Dimensions (non-wearable) ──
+    is_wearable = models.BooleanField(
+        default=False,
+        help_text="Check if this product is wearable (e.g., shirt, shoe) so buyers can pick a size"
+    )
+    available_sizes = models.CharField(
+        max_length=200, blank=True,
+        help_text="Comma-separated sizes for wearable items, e.g. S, M, L, XL or 39, 40, 41"
+    )
+    length = models.DecimalField(
+        max_digits=8, decimal_places=2, blank=True, null=True,
+        help_text="Length in cm (for non-wearable items, e.g. a box)"
+    )
+    width = models.DecimalField(
+        max_digits=8, decimal_places=2, blank=True, null=True,
+        help_text="Width in cm (for non-wearable items, e.g. a box)"
+    )
+    height = models.DecimalField(
+        max_digits=8, decimal_places=2, blank=True, null=True,
+        help_text="Height in cm (for non-wearable items, e.g. a box)"
+    )
+
     price = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.PositiveIntegerField(default=0)
     image_url = models.URLField(max_length=500, blank=True)
@@ -271,6 +293,20 @@ class Product(models.Model):
             self.slug = slug
         super().save(*args, **kwargs)
     
+    @property
+    def size_list(self):
+        """Available sizes as a clean list, e.g. ['S', 'M', 'L']."""
+        if not self.available_sizes:
+            return []
+        return [s.strip() for s in self.available_sizes.split(",") if s.strip()]
+
+    @property
+    def dimensions_display(self):
+        """Human-readable 'L x W x H cm' string, or '' if incomplete."""
+        if self.length and self.width and self.height:
+            return f"{self.length} x {self.width} x {self.height} cm"
+        return ""
+
     @property
     def avg_rating(self):
         return round(self.review_set.aggregate(rating_avg=Avg("rating"))["rating_avg"] or 0, 1)

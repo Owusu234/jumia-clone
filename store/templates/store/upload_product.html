@@ -82,6 +82,49 @@
                     {% if form.warranty.errors %}<div class="text-danger small mt-1">{{ form.warranty.errors.0 }}</div>{% endif %}
                 </div>
 
+                <!-- ── Size (wearable) / Dimensions (non-wearable) Section ── -->
+                <div class="col-12">
+                    <div class="p-3 rounded border border-theme" style="border-style:dashed !important;">
+                        <label class="form-label fw-medium mb-2">📏 Size or Dimensions</label>
+                        <div class="form-text mb-2">Tell buyers what to expect: a size for wearable items (shirts, shoes), or dimensions for everything else (boxes, furniture, etc.)</div>
+
+                        <div class="form-check form-switch mb-3">
+                            {{ form.is_wearable }}
+                            <label class="form-check-label fw-medium" for="isWearableToggle">
+                                👕 This product is wearable (has sizes)
+                            </label>
+                        </div>
+
+                        <!-- Wearable: sizes -->
+                        <div id="sizeFields">
+                            <label class="form-label fw-medium">Available Sizes</label>
+                            {{ form.available_sizes }}
+                            <div class="form-text">Comma-separated: S, M, L, XL or 39, 40, 41</div>
+                            {% if form.available_sizes.errors %}<div class="text-danger small mt-1">{{ form.available_sizes.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <!-- Non-wearable: dimensions -->
+                        <div id="dimensionFields" class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-medium">Length (cm)</label>
+                                {{ form.length }}
+                                {% if form.length.errors %}<div class="text-danger small mt-1">{{ form.length.errors.0 }}</div>{% endif %}
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-medium">Width (cm)</label>
+                                {{ form.width }}
+                                {% if form.width.errors %}<div class="text-danger small mt-1">{{ form.width.errors.0 }}</div>{% endif %}
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-medium">Height (cm)</label>
+                                {{ form.height }}
+                                {% if form.height.errors %}<div class="text-danger small mt-1">{{ form.height.errors.0 }}</div>{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ── End Size / Dimensions Section ── -->
+
                 <!-- ── Optional VR / 3D Section ── -->
                 <div class="col-12">
                     <div class="p-3 rounded border border-theme" style="border-style:dashed !important;">
@@ -141,5 +184,13 @@ function toggleVrType() {
     document.getElementById('field3d').style.display  = is3d ? 'block' : 'none';
     document.getElementById('field360').style.display = is3d ? 'none'  : 'block';
 }
+
+function toggleSizeDimensionFields() {
+    const isWearable = document.getElementById('isWearableToggle').checked;
+    document.getElementById('sizeFields').style.display = isWearable ? 'block' : 'none';
+    document.getElementById('dimensionFields').style.display = isWearable ? 'none' : 'flex';
+}
+document.getElementById('isWearableToggle').addEventListener('change', toggleSizeDimensionFields);
+toggleSizeDimensionFields(); // set initial state on load (handles validation re-renders too)
 </script>
 {% endblock %}
