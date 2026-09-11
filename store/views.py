@@ -2628,7 +2628,7 @@ def forgot_password(req):
         else:
             try:
                 supabase = get_supabase_client()
-                redirect_url = req.build_absolute_uri(reverse('store:password_reset')).rstrip('/')
+                redirect_url = req.build_absolute_uri(reverse('store:password_reset'))
                 
                 # ✅ Python SDK uses snake_case + options dict
                 supabase.auth.reset_password_for_email(email, options={"redirectTo": redirect_url})
