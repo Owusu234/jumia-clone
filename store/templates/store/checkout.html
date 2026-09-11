@@ -240,6 +240,16 @@
     }
     
     // 3️⃣ Core Paystack Execution
+    let paystackInProgress = false;
+    let paystackWatcher = null;
+
+    function stopPaystackWatcher() {
+        if (paystackWatcher) {
+            paystackWatcher.disconnect();
+            paystackWatcher = null;
+        }
+    }
+
     window.payWithPaystack = function() {
         const btn = document.getElementById('paystack-button');
         if (!btn) return;
@@ -267,7 +277,26 @@
             if (!data.success || !data.reference) {
                 throw new Error(data.error || "Failed to initialize payment.");
             }
-            
+
+            // Called whenever the Paystack popup goes away, however it goes away
+            // (onClose firing, or the iframe simply being torn down after it
+            // finishes "Checking transaction status" on Cancel).
+            function handlePaystackDismissed(showCancelMessage) {
+                if (!paystackInProgress) return;
+                paystackInProgress = false;
+                stopPaystackWatcher();
+                hideLoading();
+                resetButton(btn, originalHTML);
+
+                // Remove stuck Paystack iframe elements if left open
+                const paystackIframes = document.querySelectorAll('iframe[name="paystack-checkout-iframe"]');
+                paystackIframes.forEach(iframe => iframe.remove());
+
+                if (showCancelMessage) {
+                    showError("Payment was cancelled.");
+                }
+            }
+
             const handler = PaystackPop.setup({
                 key: PK,
                 email: EMAIL,
@@ -275,6 +304,10 @@
                 currency: "GHS",
                 ref: data.reference,
                 callback: function(response) {
+                    // A real payment attempt completed - this is not a cancellation,
+                    // so stop watching for cancellation and let verification take over.
+                    paystackInProgress = false;
+                    stopPaystackWatcher();
                     showLoading();
                     
                     // Verify transaction with Django backend
@@ -297,18 +330,26 @@
                         });
                 },
                 onClose: function() {
-                    // Force complete cleanup of Paystack DOM frames
-                    hideLoading();
-                    resetButton(btn, originalHTML);
-                    
-                    // Remove stuck Paystack iframe elements if left open
-                    const paystackIframes = document.querySelectorAll('iframe[name="paystack-checkout-iframe"]');
-                    paystackIframes.forEach(iframe => iframe.remove());
+                    // Fires once Paystack finishes its "Checking transaction status"
+                    // step after Cancel is clicked (or the modal is closed outright).
+                    handlePaystackDismissed(true);
                 }
             });
             
             resetButton(btn, originalHTML);
             handler.openIframe();
+            paystackInProgress = true;
+
+            // Safety net: if Paystack's iframe is torn down without onClose firing
+            // (a known flaky spot right after "Checking transaction status"), catch
+            // it here so the page never gets left stuck waiting.
+            stopPaystackWatcher();
+            paystackWatcher = new MutationObserver(function() {
+                if (!document.querySelector('iframe[name="paystack-checkout-iframe"]')) {
+                    handlePaystackDismissed(true);
+                }
+            });
+            paystackWatcher.observe(document.body, { childList: true, subtree: true });
         })
         .catch(err => {
             hideLoading();
