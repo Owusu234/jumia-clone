@@ -114,11 +114,15 @@
     bubbleStartTop = rect.top;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
-    bubble.setPointerCapture(e.pointerId);
+    e.preventDefault();
   });
 
-  bubble.addEventListener("pointermove", (e) => {
-    if (dragPointerId !== e.pointerId) return;
+  // Listen on window (not the bubble itself) for move/up: this way the drag
+  // keeps tracking even once the pointer moves faster than the bubble and
+  // ends up outside its 60x60 box — no dependency on setPointerCapture,
+  // which isn't reliably supported everywhere.
+  window.addEventListener("pointermove", (e) => {
+    if (dragPointerId === null || dragPointerId !== e.pointerId) return;
     const dx = e.clientX - dragStartX;
     const dy = e.clientY - dragStartY;
     if (!dragMoved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
@@ -132,8 +136,7 @@
   });
 
   function endDrag(e) {
-    if (dragPointerId !== e.pointerId) return;
-    bubble.releasePointerCapture(e.pointerId);
+    if (dragPointerId === null || dragPointerId !== e.pointerId) return;
     dragPointerId = null;
     bubble.classList.remove("sv-dragging");
     if (dragMoved) {
@@ -141,8 +144,8 @@
       savePosition(rect.left, rect.top);
     }
   }
-  bubble.addEventListener("pointerup", endDrag);
-  bubble.addEventListener("pointercancel", endDrag);
+  window.addEventListener("pointerup", endDrag);
+  window.addEventListener("pointercancel", endDrag);
 
   window.addEventListener("resize", () => {
     const rect = bubble.getBoundingClientRect();
@@ -152,11 +155,13 @@
 
   restorePosition();
 
-  bubble.addEventListener("click", () => {
+  bubble.addEventListener("click", (e) => {
     // A drag that just ended fires a click right after pointerup — swallow it
     // so dragging the bubble doesn't also toggle the chat panel open/closed.
     if (dragMoved) {
       dragMoved = false;
+      e.preventDefault();
+      e.stopPropagation();
       return;
     }
     panel.classList.toggle("open");
