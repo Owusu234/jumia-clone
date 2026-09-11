@@ -177,31 +177,29 @@
 </div>
 
 <!-- ✅ Paystack Library -->
+<!-- ✅ Paystack Library -->
 <script src="https://js.paystack.co/v1/inline.js"></script>
 
 <script>
 (function() {
     'use strict';
     
-    // 1️ Safe Django-to-JS Bridge
+    // 1️⃣ Safe Django-to-JS Bridge
     const PK = "{{ paystack_public_key|default:'pk_test_placeholder'|escapejs }}";
     const EMAIL = "{{ user.email|default:''|escapejs }}";
     const AMOUNT = {{ total_kobo|default:0 }};
     const CSRF_TOKEN = "{{ csrf_token }}";
     
-    // ✅ FIXED: Clean Django URL tags
     const INIT_URL = "{% url 'store:initialize_paystack' %}";
     const VERIFY_URL = "{% url 'store:verify_paystack' %}";
-    const CHECKOUT_URL = "{% url 'store:checkout' %}";
     
-    // 2️ UI Helpers
+    // 2️⃣ UI Helpers
     function showError(msg) {
         const el = document.getElementById('checkout-error');
         const span = document.getElementById('error-message');
         if (el && span) {
             span.textContent = msg;
             el.classList.add('show');
-            setTimeout(() => el.classList.remove('show'), 5000);
         }
     }
     
@@ -224,55 +222,38 @@
         if (el) el.classList.remove('show');
     }
     
-    // ✅ FIXED: Loading overlay control
     function showLoading() {
         const el = document.getElementById('payment-loading');
-        if (el) {
-            el.style.display = 'flex';
-        }
+        if (el) el.style.display = 'flex';
     }
     
     function hideLoading() {
         const el = document.getElementById('payment-loading');
-        if (el) {
-            el.style.display = 'none';
-        }
+        if (el) el.style.display = 'none';
     }
     
     function resetButton(btn, originalHTML) {
-        btn.disabled = false;
-        btn.innerHTML = originalHTML;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
     }
     
-    // 3️⃣ Payment Handler - FIXED FLOW
+    // 3️⃣ Core Paystack Execution
     window.payWithPaystack = function() {
         const btn = document.getElementById('paystack-button');
-        if (!btn) {
-            console.error('Paystack button not found');
-            return;
-        }
+        if (!btn) return;
         
         const originalHTML = btn.innerHTML;
-        let paymentModalOpened = false;
-        let verificationTimeout;
-        
-        // Disable button during initialization
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Initializing...';
         
-        // Validate config
-        if (!PK || PK.includes("placeholder")) {
-            showError("⚠️ Payment configuration incomplete. Contact support.");
-            resetButton(btn, originalHTML);
-            return;
-        }
-        if (typeof PaystackPop === "undefined") {
-            showError(" Payment library failed to load. Check your connection.");
+        if (!PK || PK.includes("placeholder") || typeof PaystackPop === "undefined") {
+            showError("⚠️ Payment configuration issue. Please refresh or contact support.");
             resetButton(btn, originalHTML);
             return;
         }
         
-        // Initialize payment with backend
         fetch(INIT_URL, {
             method: "POST",
             headers: {
@@ -281,23 +262,11 @@
             },
             body: JSON.stringify({})
         })
-        .then(async res => {
-            const ct = res.headers.get("content-type");
-            if (!ct || !ct.includes("application/json")) {
-                const text = await res.text();
-                console.error("🚨 Server returned HTML:", text.substring(0, 200));
-                throw new Error("Server error. Check Django terminal.");
-            }
-            return res.json();
-        })
+        .then(res => res.json())
         .then(data => {
-            if (!data.success || !data.authorization_url) {
-                throw new Error(data.error || "Payment initialization failed");
+            if (!data.success || !data.reference) {
+                throw new Error(data.error || "Failed to initialize payment.");
             }
-            
-            // ✅ FIXED: Open Paystack modal WITHOUT showing loading overlay
-            // The loading overlay should ONLY show during verification
-            paymentModalOpened = true;
             
             const handler = PaystackPop.setup({
                 key: PK,
@@ -305,114 +274,56 @@
                 amount: AMOUNT,
                 currency: "GHS",
                 ref: data.reference,
-                
-                // ✅ SUCCESS: Payment completed
                 callback: function(response) {
-                    console.log("✅ Payment completed, reference:", response.reference);
-                    
-                    // Show loading during verification
                     showLoading();
                     
-                    // Set timeout to prevent infinite loading
-                    verificationTimeout = setTimeout(() => {
-                        console.error(" Verification timeout");
-                        hideLoading();
-                        showError("⏳ Payment verification timed out. Please check your orders.");
-                        resetButton(btn, originalHTML);
-                    }, 30000); // 30 second timeout
-                    
-                    // Verify payment on backend
+                    // Verify transaction with Django backend
                     fetch(VERIFY_URL + "?reference=" + encodeURIComponent(response.reference))
-                        .then(res => {
-                            if (!res.ok) {
-                                throw new Error('Verification failed: ' + res.status);
-                            }
-                            return res.json();
-                        })
+                        .then(res => res.json())
                         .then(verifyData => {
-                            // Clear timeout
-                            clearTimeout(verificationTimeout);
                             hideLoading();
-                            
                             if (verifyData.success) {
-                                showSuccess("✅ Payment successful! Redirecting...");
-                                // Clear cart and redirect
-                                setTimeout(() => {
-                                    window.location.href = verifyData.redirect_url || "/order/success/";
-                                }, 1500);
+                                showSuccess("✅ Payment verified successfully!");
+                                window.location.href = verifyData.redirect_url || "/order/success/";
                             } else {
-                                showError(verifyData.error || "Payment verification failed");
+                                showError(verifyData.error || "Payment verification failed.");
                                 resetButton(btn, originalHTML);
                             }
                         })
-                        .catch(err => {
-                            clearTimeout(verificationTimeout);
+                        .catch(() => {
                             hideLoading();
-                            console.error("Verification error:", err);
-                            showError("⚠️ Could not verify payment. Please check your orders or contact support.");
+                            showError("⚠️ Verification connection timeout. Check your orders.");
                             resetButton(btn, originalHTML);
                         });
                 },
-                
-                // ✅ CANCELLED: User closed modal - THIS FIXES THE STUCK LOADING
                 onClose: function() {
-                    console.log("❌ Payment modal closed by user");
-                    
-                    // Hide loading if it's showing
+                    // Force complete cleanup of Paystack DOM frames
                     hideLoading();
-                    
-                    // Clear any pending timeout
-                    if (verificationTimeout) {
-                        clearTimeout(verificationTimeout);
-                    }
-                    
-                    // Reset button
                     resetButton(btn, originalHTML);
                     
-                    // Show friendly message (optional - you can remove this alert)
-                    // alert("💬 Payment was cancelled. You can try again when ready.");
-                    
-                    // Optional: Stay on checkout page (don't redirect)
-                    // If you want to redirect, uncomment this:
-                    // window.location.href = CHECKOUT_URL;
+                    // Remove stuck Paystack iframe elements if left open
+                    const paystackIframes = document.querySelectorAll('iframe[name="paystack-checkout-iframe"]');
+                    paystackIframes.forEach(iframe => iframe.remove());
                 }
             });
             
-            // Open the payment popup
-            try {
-                handler.openIframe();
-            } catch (e) {
-                console.error("Failed to open Paystack modal:", e);
-                showError(" Could not open payment window. Please check your popup blocker.");
-                resetButton(btn, originalHTML);
-            }
+            resetButton(btn, originalHTML);
+            handler.openIframe();
         })
         .catch(err => {
-            // Only hide loading if modal wasn't opened
-            if (!paymentModalOpened) {
-                hideLoading();
-            }
-            
-            console.error("💥 Initialization failed:", err);
-            showError("Payment error: " + err.message);
+            hideLoading();
+            showError(err.message || "Initialization error");
             resetButton(btn, originalHTML);
         });
     };
     
-    // 4️⃣ Attach on load
+    // 4️⃣ Event Attachments
     document.addEventListener("DOMContentLoaded", function() {
         const btn = document.getElementById("paystack-button");
         if (btn) {
-            btn.addEventListener("click", window.payWithPaystack);
+            btn.onclick = window.payWithPaystack;
         }
-        
-        // Auto-hide alerts after 5 seconds
-        setTimeout(function() {
-            hideError();
-            hideSuccess();
-        }, 5000);
     });
-    
 })();
 </script>
 {% endblock %}
