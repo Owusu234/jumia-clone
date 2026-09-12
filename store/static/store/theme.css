@@ -398,38 +398,6 @@ a { transition: color 0.2s var(--ease); }
   justify-content: center;
   padding: 0 2px;
 }
-
-/* AI Chat slot in the bottom tab bar rendered as a raised floating action
-   button (matching the #sv-chat-bubble style) instead of a flat icon+label
-   tab, while staying in the same position within the tab bar. */
-.mobile-tabbar a.ai-chat-fab {
-  flex: 1;
-  justify-content: flex-start;
-  padding-top: 0;
-  overflow: visible;
-}
-.mobile-tabbar .ai-chat-fab-circle {
-  width: 52px;
-  height: 52px;
-  margin-top: -26px;
-  border-radius: 50%;
-  background: var(--p);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--p) 55%, transparent);
-  border: 3px solid var(--bg);
-  transition: transform 0.15s ease;
-}
-.mobile-tabbar .ai-chat-fab-circle i {
-  font-size: 1.4rem;
-  line-height: 1;
-}
-.mobile-tabbar a.ai-chat-fab:active .ai-chat-fab-circle,
-.mobile-tabbar a.ai-chat-fab.active .ai-chat-fab-circle {
-  transform: scale(0.94);
-}
 @media (max-width: 767px) {
   .mobile-tabbar { display: block; }
   body { padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important; }
