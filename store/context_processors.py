@@ -1,4 +1,4 @@
-from .models import AdminNotification, UserNotification
+from .models import AdminNotification, UserNotification, Region
 
 def global_context(req):
     """Provides cart_count, global variables, and admin notifications to all templates"""
@@ -21,6 +21,19 @@ def global_context(req):
         'SITE_NAME': 'ShopVibe',
         'SITE_URL': req.build_absolute_uri('/').rstrip('/')
     }
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 🚚 DELIVERY INFO (Region & City) — collected once via a popup before the
+    #    first "Add to cart", then remembered in the session for the rest of
+    #    the visit. Regions come from the DB when seeded, with a hardcoded
+    #    fallback so the picker still works on a fresh install.
+    # ─────────────────────────────────────────────────────────────────────────────
+    context['delivery_region'] = req.session.get('delivery_region', '')
+    context['delivery_city'] = req.session.get('delivery_city', '')
+    context['has_delivery_info'] = bool(context['delivery_region'] and context['delivery_city'])
+    context['delivery_regions'] = Region.objects.filter(
+        country__code='GHA', is_active=True
+    ).order_by('name')
 
     # ─────────────────────────────────────────────────────────────────────────────
     # 2️⃣ NEW: ADMIN NOTIFICATION LOGIC (Only runs for Staff/Admins)

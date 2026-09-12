@@ -2,7 +2,7 @@
 
 #sv-chat-bubble {
   position: fixed;
-  bottom: 24px;
+  bottom: 32px;
   right: 24px;
   width: 60px;
   height: 60px;
@@ -29,7 +29,7 @@
 
 #sv-chat-panel {
   position: fixed;
-  bottom: 96px;
+  bottom: 104px;
   right: 24px;
   width: 340px;
   max-width: 92vw;
@@ -45,6 +45,19 @@
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 #sv-chat-panel.open { display: flex; }
+
+/* On mobile, the bottom app tab bar occupies the bottom ~64px of the
+   screen — lift the bubble (and the panel that anchors off it) clear
+   of that bar instead of letting it sit underneath/overlapping it. */
+@media (max-width: 767px) {
+  #sv-chat-bubble:not([style*="top"]) {
+    bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  #sv-chat-panel:not([style*="top"]) {
+    bottom: calc(156px + env(safe-area-inset-bottom));
+  }
+}
+
 
 #sv-chat-header {
   background: #1a1a1a;

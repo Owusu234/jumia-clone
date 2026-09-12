@@ -135,26 +135,49 @@
             <p class="mb-3">{{ product.description|truncatewords:20 }}</p>
 
             {% if product.get_colors or product.size_list %}
-            <form method="post" action="{% url 'store:add_to_cart' product.id %}" class="variant-selection card border-theme bg-card p-3 mb-3">
+            <form method="post" action="{% url 'store:add_to_cart' product.id %}" class="variant-selection card border-theme bg-card p-3 mb-3 add-to-cart-form">
                 {% csrf_token %}
                 <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-1"></i>Select your options</h6>
                 {% if product.get_colors %}
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Color</label>
+                    {% with colors=product.get_colors %}
+                    {% if colors|length == 1 %}
+                        <!-- Only one color available — auto-selected, no need to ask -->
+                        <input type="hidden" name="color" value="{{ colors.0 }}">
+                        <div>
+                            <span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2" style="font-size: 0.9rem;">
+                                <i class="bi bi-check-circle-fill me-1"></i>{{ colors.0 }}
+                            </span>
+                        </div>
+                    {% else %}
                     <select name="color" class="form-select" required>
                         <option value="">Choose a color</option>
-                        {% for color in product.get_colors %}<option value="{{ color }}">{{ color }}</option>{% endfor %}
+                        {% for color in colors %}<option value="{{ color }}">{{ color }}</option>{% endfor %}
                     </select>
+                    {% endif %}
+                    {% endwith %}
                 </div>
                 {% endif %}
                 {% if product.size_list %}
-                <div class="mb-1">
-                    <label class="form-label fw-semibold">Size</label>
-                    <select name="size" class="form-select" required>
-                        <option value="">Choose a size</option>
-                        {% for size in product.size_list %}<option value="{{ size }}">{{ size }}</option>{% endfor %}
-                    </select>
+                {% with sizes=product.size_list %}
+                <div class="mb-1 size-select-card">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="fw-semibold"><i class="bi bi-tag-fill me-2"></i>Select Size:</span>
+                        <span class="size-current-label" id="sizeCurrentLabel">{% if sizes|length == 1 %}Size {{ sizes.0 }}{% endif %}</span>
+                    </div>
+                    <div class="size-box-group">
+                        {% for size in sizes %}
+                        <label class="size-box">
+                            <input type="radio" name="size" value="{{ size }}"
+                                   {% if sizes|length == 1 %}checked{% endif %} required
+                                   onchange="document.getElementById('sizeCurrentLabel').textContent = 'Size ' + this.value;">
+                            <span>{{ size }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
                 </div>
+                {% endwith %}
                 {% endif %}
                 {% if product.stock > 0 %}
                 <button type="submit" class="btn btn-primary btn-lg w-100">
@@ -164,7 +187,7 @@
             </form>
             {% elif product.stock > 0 %}
             <div class="d-grid gap-2">
-                <form method="post" action="{% url 'store:add_to_cart' product.id %}">
+                <form method="post" action="{% url 'store:add_to_cart' product.id %}" class="add-to-cart-form">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-primary btn-lg w-100">
                         <i class="bi bi-cart-plus me-2"></i>Add to Cart
@@ -342,6 +365,65 @@
 
 <!-- ✅ CSS (Your existing styles + reviews) -->
 <style>
+    /* 📦 Boxed size selector — card with header + "Size X" readout, like a
+       tag/size picker (dark boxes, selected one filled in the accent color) */
+    .size-select-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px 18px;
+    }
+    .size-current-label {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--success);
+        min-height: 1.2em;
+    }
+    .size-box-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .size-box {
+        position: relative;
+        cursor: pointer;
+        margin: 0;
+    }
+    .size-box input {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+        pointer-events: none;
+    }
+    .size-box span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 50px;
+        height: 44px;
+        padding: 0 14px;
+        border: 2px solid var(--border);
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: var(--tx);
+        background: var(--bg);
+        transition: all 0.15s var(--ease, ease);
+    }
+    .size-box:hover span {
+        border-color: var(--success);
+    }
+    .size-box input:checked + span {
+        border-color: var(--success);
+        background: var(--success);
+        color: #06210f;
+    }
+    .size-box input:focus-visible + span {
+        outline: 2px solid var(--success);
+        outline-offset: 2px;
+    }
+
     /* ⭐ Star rating */
     .star-rating { user-select: none; }
     .stars-container i {
