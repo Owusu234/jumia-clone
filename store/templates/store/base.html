@@ -264,13 +264,9 @@
                 <i class="bi bi-cart{% if request.resolver_match.url_name == 'cart' %}-fill{% endif %}"></i>Cart
                 {% if cart_count %}<span class="tab-badge">{{ cart_count }}</span>{% endif %}
             </a>
-            {% if user.is_authenticated %}
-            <a href="{% url 'store:profile' %}" class="{% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
-                <i class="bi bi-person{% if request.resolver_match.url_name == 'profile' %}-fill{% endif %}"></i>Account
+            <a href="#" class="ai-chat-tab" onclick="return svOpenChatFromTab();">
+                <i class="bi bi-robot"></i>AI Chat
             </a>
-            {% else %}
-            <a href="{% url 'store:login' %}"><i class="bi bi-box-arrow-in-right"></i>Login</a>
-            {% endif %}
         </div>
     </nav>
 
@@ -515,6 +511,17 @@
             });
         });
     })();
+    </script>
+
+    <!-- NEW: Bottom-tab AI Chat trigger — opens the same chat bubble/panel
+         that the chatbot widget script builds, just from the tab bar
+         instead of the floating bubble (which is hidden on mobile). -->
+    <script>
+    function svOpenChatFromTab() {
+        const bubble = document.getElementById('sv-chat-bubble');
+        if (bubble) bubble.click();
+        return false;
+    }
     </script>
 
     <!-- NEW: Delivery Info Gate — intercepts "Add to cart" forms and requires

@@ -58,6 +58,18 @@
   }
 }
 
+/* The floating bubble is redundant on mobile now that "AI Chat" lives in
+   the bottom tab bar — hide it there. Using opacity/pointer-events
+   (rather than display:none) keeps it in the layout so the widget's own
+   positioning math (which reads its getBoundingClientRect) still works
+   when the tab bar opens the panel. */
+@media (max-width: 767px) {
+  #sv-chat-bubble {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 
 #sv-chat-header {
   background: #1a1a1a;
