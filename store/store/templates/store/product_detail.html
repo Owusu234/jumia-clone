@@ -160,19 +160,24 @@
                 </div>
                 {% endif %}
                 {% if product.size_list %}
-                <div class="mb-1">
-                    <label class="form-label fw-semibold">Size</label>
-                    {% with sizes=product.size_list %}
+                {% with sizes=product.size_list %}
+                <div class="mb-1 size-select-card">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="fw-semibold"><i class="bi bi-tag-fill me-2"></i>Select Size:</span>
+                        <span class="size-current-label" id="sizeCurrentLabel">{% if sizes|length == 1 %}Size {{ sizes.0 }}{% endif %}</span>
+                    </div>
                     <div class="size-box-group">
                         {% for size in sizes %}
                         <label class="size-box">
-                            <input type="radio" name="size" value="{{ size }}" {% if sizes|length == 1 %}checked{% endif %} required>
+                            <input type="radio" name="size" value="{{ size }}"
+                                   {% if sizes|length == 1 %}checked{% endif %} required
+                                   onchange="document.getElementById('sizeCurrentLabel').textContent = 'Size ' + this.value;">
                             <span>{{ size }}</span>
                         </label>
                         {% endfor %}
                     </div>
-                    {% endwith %}
                 </div>
+                {% endwith %}
                 {% endif %}
                 {% if product.stock > 0 %}
                 <button type="submit" class="btn btn-primary btn-lg w-100">
@@ -360,7 +365,20 @@
 
 <!-- ✅ CSS (Your existing styles + reviews) -->
 <style>
-    /* 📦 Boxed size selector (replaces the plain size dropdown) */
+    /* 📦 Boxed size selector — card with header + "Size X" readout, like a
+       tag/size picker (dark boxes, selected one filled in the accent color) */
+    .size-select-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px 18px;
+    }
+    .size-current-label {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--success);
+        min-height: 1.2em;
+    }
     .size-box-group {
         display: flex;
         flex-wrap: wrap;
@@ -382,27 +400,27 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 46px;
+        min-width: 50px;
         height: 44px;
         padding: 0 14px;
         border: 2px solid var(--border);
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 0.9rem;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 0.95rem;
         color: var(--tx);
         background: var(--bg);
         transition: all 0.15s var(--ease, ease);
     }
     .size-box:hover span {
-        border-color: var(--p);
+        border-color: var(--success);
     }
     .size-box input:checked + span {
-        border-color: var(--p);
-        background: var(--p);
-        color: #fff;
+        border-color: var(--success);
+        background: var(--success);
+        color: #06210f;
     }
     .size-box input:focus-visible + span {
-        outline: 2px solid var(--p);
+        outline: 2px solid var(--success);
         outline-offset: 2px;
     }
 
