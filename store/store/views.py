@@ -2448,6 +2448,21 @@ def get_regions_by_country(req):
     return JsonResponse({'regions': []})
 
 
+@require_POST
+def save_delivery_info(req):
+    """Stores the buyer's delivery region/city in their session. Shown once
+    via a modal before the first item is added to the cart, so we know
+    where to deliver without forcing it into every product's variant form."""
+    region = (req.POST.get('region') or '').strip()
+    city = (req.POST.get('city') or '').strip()
+    if not region or not city:
+        return JsonResponse({'success': False, 'error': 'Please select a region and enter a city.'}, status=400)
+    req.session['delivery_region'] = region
+    req.session['delivery_city'] = city
+    req.session.modified = True
+    return JsonResponse({'success': True, 'region': region, 'city': city})
+
+
 @login_required
 def product_detail(req, slug):
     product = get_object_or_404(Product, slug=slug, is_active=True)

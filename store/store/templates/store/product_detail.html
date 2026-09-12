@@ -135,7 +135,7 @@
             <p class="mb-3">{{ product.description|truncatewords:20 }}</p>
 
             {% if product.get_colors or product.size_list %}
-            <form method="post" action="{% url 'store:add_to_cart' product.id %}" class="variant-selection card border-theme bg-card p-3 mb-3">
+            <form method="post" action="{% url 'store:add_to_cart' product.id %}" class="variant-selection card border-theme bg-card p-3 mb-3 add-to-cart-form">
                 {% csrf_token %}
                 <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-1"></i>Select your options</h6>
                 {% if product.get_colors %}
@@ -187,7 +187,7 @@
             </form>
             {% elif product.stock > 0 %}
             <div class="d-grid gap-2">
-                <form method="post" action="{% url 'store:add_to_cart' product.id %}">
+                <form method="post" action="{% url 'store:add_to_cart' product.id %}" class="add-to-cart-form">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-primary btn-lg w-100">
                         <i class="bi bi-cart-plus me-2"></i>Add to Cart
