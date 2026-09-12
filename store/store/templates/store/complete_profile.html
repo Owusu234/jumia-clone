@@ -1,0 +1,60 @@
+{% extends "store/base.html" %}
+{% block title %}Complete Your Profile | ShopVibe{% endblock %}
+{% block content %}
+<style>
+    .completion-card { 
+        background: var(--card); 
+        border: 1px solid var(--border); 
+        border-radius: 12px; 
+        padding: 30px; 
+        max-width: 500px; 
+        margin: 40px auto; 
+    }
+    .form-control { 
+        background: var(--bg) !important; 
+        border: 1px solid var(--border) !important; 
+        color: var(--tx) !important; 
+    }
+    .form-control:focus { 
+        border-color: var(--p) !important; 
+        box-shadow: 0 0 0 3px rgba(246, 139, 30, 0.15) !important; 
+    }
+</style>
+
+<div class="container">
+    <div class="completion-card">
+        <h3 class="fw-bold mb-4 text-center">👋 Complete Your Profile</h3>
+        <p class="text-center text-muted mb-4">Just a few more details to get you started.</p>
+        
+        <form method="post" action="{% url 'store:home' %}">
+            {% csrf_token %}
+            
+            <!-- Country - TEXT FIELD -->
+            <div class="mb-3">
+                <label class="form-label fw-medium">Country *</label>
+                <input type="text" name="country" class="form-control" 
+                       placeholder="e.g., Ghana, Nigeria, Kenya" 
+                       value="{{ profile.country|default:'' }}" required>
+                <div class="form-text">Where are you located?</div>
+            </div>
+            
+            <!-- WhatsApp -->
+            <div class="mb-4">
+                <label class="form-label fw-medium">WhatsApp Number *</label>
+                <input type="tel" name="whatsapp_number" class="form-control" 
+                       placeholder="+233 XX XXX XXXX" 
+                       value="{{ profile.whatsapp_number|default:'' }}" required>
+                <div class="form-text">Used for order alerts & seller chat</div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary w-100 btn-lg">
+                Continue to ShopVibe
+            </button>
+        </form>
+        
+        <p class="text-center text-muted small mt-3">
+            <a href="{% url 'logout' %}" class="text-decoration-none">Not you? Log out</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

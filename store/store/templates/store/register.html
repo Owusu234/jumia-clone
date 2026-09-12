@@ -1,0 +1,121 @@
+{% extends "store/base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="bg-white rounded p-4 shadow-sm">
+            <h4 class="text-center fw-bold mb-4" style="color:var(--p)">Join ShopVibe</h4>
+            <!-- store/templates/store/register.html - Replace the <form> section -->
+            <form method="post" novalidate>
+                {% csrf_token %}
+                
+                <!-- Username & Email -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Username *</label>
+                        {{ form.username }}
+                        {% if form.username.errors %}<div class="text-danger small">{{ form.username.errors.0 }}</div>{% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Email *</label>
+                        {{ form.email }}
+                        {% if form.email.errors %}<div class="text-danger small">{{ form.email.errors.0 }}</div>{% endif %}
+                    </div>
+                </div>
+
+                <!-- First & Last Name -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">First Name</label>
+                        {{ form.first_name }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Last Name</label>
+                        {{ form.last_name }}
+                    </div>
+                </div>
+
+                <!-- ✅ SINGLE WhatsApp Field -->
+                <div class="mb-3">
+                    <label class="form-label">WhatsApp Number *</label>
+                    {{ form.whatsapp_number }}
+                    <div class="form-text">Used for order alerts & chat. Country code auto-fills.</div>
+                    {% if form.whatsapp_number.errors %}<div class="text-danger small">{{ form.whatsapp_number.errors.0 }}</div>{% endif %}
+                </div>
+
+                <!-- Password 1 -->
+                <div class="mb-3">
+                    <label class="form-label">Password *</label>
+                    <div class="position-relative">
+                        {{ form.password1 }}
+                        <span class="position-absolute top-50 end-0 translate-middle-y me-3" 
+                            style="cursor: pointer; z-index: 10; color: var(--muted);"
+                            onclick="togglePassword('id_password1', 'eye-icon-1')">
+                            <i class="bi bi-eye-slash" id="eye-icon-1"></i>
+                        </span>
+                    </div>
+                    {% if form.password1.errors %}<div class="text-danger small">{{ form.password1.errors.0 }}</div>{% endif %}
+                </div>
+
+                <!-- Password 2 -->
+                <div class="mb-3">
+                    <label class="form-label">Confirm Password *</label>
+                    <div class="position-relative">
+                        {{ form.password2 }}
+                        <span class="position-absolute top-50 end-0 translate-middle-y me-3" 
+                            style="cursor: pointer; z-index: 10; color: var(--muted);"
+                            onclick="togglePassword('id_password2', 'eye-icon-2')">
+                            <i class="bi bi-eye-slash" id="eye-icon-2"></i>
+                        </span>
+                    </div>
+                    {% if form.password2.errors %}<div class="text-danger small">{{ form.password2.errors.0 }}</div>{% endif %}
+                </div>
+                <!-- Country -->
+                <div class="mb-3">
+                    <label class="form-label fw-medium">Country</label>
+                    {{ form.country }}
+                    <div class="form-text">Where are you located?</div>
+                    {% if form.country.errors %}<div class="text-danger small mt-1">{{ form.country.errors.0 }}</div>{% endif %}
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 btn-lg">Create Account</button>
+            </form>
+            <p class="text-center mt-3 small">
+                Already have an account? <a href="{% url 'login' %}" class="fw-bold">Login</a>
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+function togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const icon = btn.querySelector('i');
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('bi-eye');
+        icon.classList.add('bi-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.remove('bi-eye-slash');
+        icon.classList.add('bi-eye');
+    }
+}
+</script>
+<script>
+function togglePassword(inputId, iconId) {
+    const input = document.getElementById(inputId);
+    const icon = document.getElementById(iconId);
+    
+    if (input.type === "password") {
+        input.type = "text";
+        icon.classList.remove("bi-eye-slash");
+        icon.classList.add("bi-eye");
+    } else {
+        input.type = "password";
+        icon.classList.remove("bi-eye");
+        icon.classList.add("bi-eye-slash");
+    }
+}
+</script>
+{% endblock %}

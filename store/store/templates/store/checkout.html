@@ -1,0 +1,389 @@
+{% extends "store/base.html" %}
+{% block title %}Checkout | ShopVibe{% endblock %}
+
+{% block content %}
+<style>
+    .checkout-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 28px;
+        box-shadow: var(--shadow-sm);
+        transition: box-shadow 0.25s var(--ease);
+    }
+    .checkout-card:hover { box-shadow: var(--shadow); }
+    .checkout-item {
+        border-bottom: 1px solid var(--border);
+        padding: 14px 0;
+        border-radius: var(--radius-sm);
+        transition: background 0.2s var(--ease);
+    }
+    .checkout-item:hover { background: rgba(246, 139, 30, 0.04); }
+    .checkout-item:last-child { border-bottom: none; }
+    .paystack-btn {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: white;
+        border: none;
+        padding: 15px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.3s var(--ease);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        box-shadow: 0 6px 18px rgba(22, 163, 74, 0.3);
+    }
+    .paystack-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(22, 163, 74, 0.35); }
+    .paystack-btn:disabled { background: var(--muted); cursor: not-allowed; opacity: 0.7; box-shadow: none; }
+    .error-alert {
+        background: var(--danger-bg);
+        border: 1px solid var(--danger);
+        color: var(--danger);
+        padding: 14px 18px;
+        border-radius: var(--radius-sm);
+        margin-bottom: 16px;
+        display: none;
+    }
+    .error-alert.show { display: block; animation: slideDown 0.3s var(--ease); }
+    .success-alert {
+        background: var(--success-bg);
+        border: 1px solid var(--success);
+        color: var(--success);
+        padding: 14px 18px;
+        border-radius: var(--radius-sm);
+        margin-bottom: 16px;
+        display: none;
+    }
+    .success-alert.show { display: block; animation: slideDown 0.3s var(--ease); }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    /* Loading overlay */
+    .payment-loading {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(13, 17, 23, 0.75);
+        backdrop-filter: blur(6px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        flex-direction: column;
+        color: white;
+    }
+    .payment-loading.show { display: flex; }
+    .payment-loading .spinner {
+        width: 50px; height: 50px;
+        border: 4px solid rgba(255,255,255,0.25);
+        border-top-color: var(--p);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<div class="container py-4">
+    <h2 class="fw-bold mb-4">🔐 Secure Checkout</h2>
+    
+    <!-- Error Display -->
+    <div id="checkout-error" class="error-alert" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i><span id="error-message"></span>
+        <button type="button" class="btn-close float-end" onclick="hideError()"></button>
+    </div>
+    
+    <!-- Success Display -->
+    <div id="checkout-success" class="success-alert" role="alert">
+        <i class="bi bi-check-circle me-2"></i><span id="success-message"></span>
+        <button type="button" class="btn-close float-end" onclick="hideSuccess()"></button>
+    </div>
+    
+    <div class="row g-4">
+        <!-- Order Summary -->
+        <div class="col-lg-8">
+            <div class="checkout-card">
+                <h5 class="fw-bold mb-3">📦 Order Items</h5>
+                {% for item in items %}
+                <div class="checkout-item d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-3">
+                        <img src="{{ item.product.get_image }}" 
+                             style="width: 60px; height: 60px; object-fit: contain; border-radius: 8px; background: #fff;" 
+                             onerror="this.src='https://via.placeholder.com/60?text=No+Image'"
+                             alt="{{ item.product.name }}">
+                        <div>
+                            <h6 class="fw-bold mb-1">{{ item.product.name }}</h6>
+                            <small class="text-muted">Qty: {{ item.qty }} × GH₵{{ item.product.price }}</small>
+                            {% if item.color %}<small class="text-muted d-block">Color: {{ item.color }}</small>{% endif %}
+                            {% if item.size %}<small class="text-muted d-block">Size: {{ item.size }}</small>{% endif %}
+                        </div>
+                    </div>
+                    <span class="fw-bold">GH₵{{ item.subtotal|floatformat:2 }}</span>
+                </div>
+                {% empty %}
+                <p class="text-muted">Your cart is empty.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Payment Section -->
+        <div class="col-lg-4">
+            <div class="checkout-card">
+                <h5 class="fw-bold mb-3">💳 Payment Summary</h5>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Subtotal</span>
+                    <span>GH₵{{ total|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Shipping</span>
+                    <span class="text-success">Free</span>
+                </div>
+                <hr class="border-theme">
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="fw-bold fs-5">Total</span>
+                    <span class="fw-bold fs-5 text-primary">GH₵{{ total|floatformat:2 }}</span>
+                </div>
+
+                {% if not user.is_authenticated %}
+                <div class="mb-3">
+                    <label for="guest-email" class="form-label fw-bold">Your email</label>
+                    <input type="email" id="guest-email" class="form-control" placeholder="you@example.com" required>
+                    <small class="text-muted">Used only to process this payment with Paystack and send your receipt.</small>
+                </div>
+                {% endif %}
+                
+                <!-- Paystack Payment Button -->
+                <button type="button" id="paystack-button" class="paystack-btn" onclick="payWithPaystack()">
+                    <i class="bi bi-lock"></i> Pay Securely with Paystack
+                </button>
+                
+                <p class="text-muted small mt-3 text-center">
+                    <i class="bi bi-shield-check me-1"></i> Encrypted payment powered by Paystack
+                </p>
+                
+                <!-- Cancel/Back Link -->
+                <div class="text-center mt-3">
+                    <a href="{% url 'store:cart' %}" class="text-muted small">
+                        <i class="bi bi-arrow-left me-1"></i> Return to Cart
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="payment-loading" class="payment-loading">
+    <div class="spinner"></div>
+    <div>Processing payment...</div>
+    <small class="text-muted mt-2">Please do not close this window</small>
+</div>
+
+<!-- ✅ Paystack Library -->
+<!-- ✅ Paystack Library -->
+<script src="https://js.paystack.co/v1/inline.js"></script>
+
+<script>
+(function() {
+    'use strict';
+    
+    // 1️⃣ Safe Django-to-JS Bridge
+    const PK = "{{ paystack_public_key|default:'pk_test_placeholder'|escapejs }}";
+    const EMAIL = "{{ user.email|default:''|escapejs }}";
+    const IS_GUEST = {{ user.is_authenticated|yesno:"false,true" }};
+    const AMOUNT = {{ total_kobo|default:0 }};
+    const CSRF_TOKEN = "{{ csrf_token }}";
+    
+    const INIT_URL = "{% url 'store:initialize_paystack' %}";
+    const VERIFY_URL = "{% url 'store:verify_paystack' %}";
+    
+    // 2️⃣ UI Helpers
+    function showError(msg) {
+        const el = document.getElementById('checkout-error');
+        const span = document.getElementById('error-message');
+        if (el && span) {
+            span.textContent = msg;
+            el.classList.add('show');
+        }
+    }
+    
+    function showSuccess(msg) {
+        const el = document.getElementById('checkout-success');
+        const span = document.getElementById('success-message');
+        if (el && span) {
+            span.textContent = msg;
+            el.classList.add('show');
+        }
+    }
+    
+    function hideError() {
+        const el = document.getElementById('checkout-error');
+        if (el) el.classList.remove('show');
+    }
+    
+    function hideSuccess() {
+        const el = document.getElementById('checkout-success');
+        if (el) el.classList.remove('show');
+    }
+    
+    function showLoading() {
+        const el = document.getElementById('payment-loading');
+        if (el) el.style.display = 'flex';
+    }
+    
+    function hideLoading() {
+        const el = document.getElementById('payment-loading');
+        if (el) el.style.display = 'none';
+    }
+    
+    function resetButton(btn, originalHTML) {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    }
+    
+    // 3️⃣ Core Paystack Execution
+    let paystackInProgress = false;
+    let paystackWatcher = null;
+
+    function stopPaystackWatcher() {
+        if (paystackWatcher) {
+            paystackWatcher.disconnect();
+            paystackWatcher = null;
+        }
+    }
+
+    window.payWithPaystack = function() {
+        const btn = document.getElementById('paystack-button');
+        if (!btn) return;
+        
+        const originalHTML = btn.innerHTML;
+
+        let payerEmail = EMAIL;
+        if (IS_GUEST) {
+            const guestEmailInput = document.getElementById('guest-email');
+            payerEmail = guestEmailInput ? guestEmailInput.value.trim() : '';
+            if (!payerEmail || !payerEmail.includes('@')) {
+                showError('Please enter a valid email address to continue.');
+                return;
+            }
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Initializing...';
+        
+        if (!PK || PK.includes("placeholder") || typeof PaystackPop === "undefined") {
+            showError("⚠️ Payment configuration issue. Please refresh or contact support.");
+            resetButton(btn, originalHTML);
+            return;
+        }
+        
+        fetch(INIT_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": CSRF_TOKEN
+            },
+            body: JSON.stringify({ email: payerEmail })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success || !data.reference) {
+                throw new Error(data.error || "Failed to initialize payment.");
+            }
+
+            // Called whenever the Paystack popup goes away, however it goes away
+            // (onClose firing, or the iframe simply being torn down after it
+            // finishes "Checking transaction status" on Cancel).
+            function handlePaystackDismissed(showCancelMessage) {
+                if (!paystackInProgress) return;
+                paystackInProgress = false;
+                stopPaystackWatcher();
+                hideLoading();
+                resetButton(btn, originalHTML);
+
+                // Remove stuck Paystack iframe elements if left open
+                const paystackIframes = document.querySelectorAll('iframe[name="paystack-checkout-iframe"]');
+                paystackIframes.forEach(iframe => iframe.remove());
+
+                if (showCancelMessage) {
+                    showError("Payment was cancelled.");
+                }
+            }
+
+            const handler = PaystackPop.setup({
+                key: PK,
+                email: payerEmail,
+                amount: AMOUNT,
+                currency: "GHS",
+                ref: data.reference,
+                callback: function(response) {
+                    // A real payment attempt completed - this is not a cancellation,
+                    // so stop watching for cancellation and let verification take over.
+                    paystackInProgress = false;
+                    stopPaystackWatcher();
+                    showLoading();
+                    
+                    // Verify transaction with Django backend
+                    fetch(VERIFY_URL + "?reference=" + encodeURIComponent(response.reference))
+                        .then(res => res.json())
+                        .then(verifyData => {
+                            hideLoading();
+                            if (verifyData.success) {
+                                showSuccess("✅ Payment verified successfully!");
+                                window.location.href = verifyData.redirect_url || "/order/success/";
+                            } else {
+                                showError(verifyData.error || "Payment verification failed.");
+                                resetButton(btn, originalHTML);
+                            }
+                        })
+                        .catch(() => {
+                            hideLoading();
+                            showError("⚠️ Verification connection timeout. Check your orders.");
+                            resetButton(btn, originalHTML);
+                        });
+                },
+                onClose: function() {
+                    // Fires once Paystack finishes its "Checking transaction status"
+                    // step after Cancel is clicked (or the modal is closed outright).
+                    handlePaystackDismissed(true);
+                }
+            });
+            
+            resetButton(btn, originalHTML);
+            handler.openIframe();
+            paystackInProgress = true;
+
+            // Safety net: if Paystack's iframe is torn down without onClose firing
+            // (a known flaky spot right after "Checking transaction status"), catch
+            // it here so the page never gets left stuck waiting.
+            stopPaystackWatcher();
+            paystackWatcher = new MutationObserver(function() {
+                if (!document.querySelector('iframe[name="paystack-checkout-iframe"]')) {
+                    handlePaystackDismissed(true);
+                }
+            });
+            paystackWatcher.observe(document.body, { childList: true, subtree: true });
+        })
+        .catch(err => {
+            hideLoading();
+            showError(err.message || "Initialization error");
+            resetButton(btn, originalHTML);
+        });
+    };
+    
+    // 4️⃣ Event Attachments
+    document.addEventListener("DOMContentLoaded", function() {
+        const btn = document.getElementById("paystack-button");
+        if (btn) {
+            btn.onclick = window.payWithPaystack;
+        }
+    });
+})();
+</script>
+{% endblock %}

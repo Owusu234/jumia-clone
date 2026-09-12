@@ -1,0 +1,190 @@
+{% extends "store/base.html" %}
+{% load static %}
+
+{% block title %}My Wishlist - ShopVibe{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h1 class="h3 mb-4"><i class="bi bi-heart-fill me-2" style="color: var(--p);"></i>My Wishlist</h1>
+
+    <div id="wishlistEmpty" class="text-center py-5" style="display: none;">
+        <i class="bi bi-heart" style="font-size: 3rem; opacity: 0.3;"></i>
+        <p class="text-muted mt-3 mb-3">Your wishlist is empty.</p>
+        <a href="{% url 'store:home' %}" class="btn" style="background: var(--p); color: #fff;">Browse Products</a>
+    </div>
+
+    <div id="wishlistGrid" class="row g-3"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function readList(key) {
+        try {
+            const value = JSON.parse(localStorage.getItem(key) || '[]');
+            return Array.isArray(value) ? value : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function getWishlist() {
+        // Keep the existing wishlist storage and also recognize the modern saved-products storage.
+        // This does not alter either storage key.
+        const oldList = readList('sv_wishlist');
+        const modernList = readList('shopvibe_saved_products_v1');
+        const combined = oldList.concat(modernList);
+        const seen = {};
+
+        return combined.map(function (item) {
+            return (typeof item === 'string')
+                ? { id: item, name: '', price: '', image: '', slug: '', url: '' }
+                : item;
+        }).filter(function (item) {
+            const key = String(item.id || item.slug || item.url || '');
+            if (!key || seen[key]) return false;
+            seen[key] = true;
+            return true;
+        });
+    }
+
+    function saveWishlist(list) {
+        localStorage.setItem('sv_wishlist', JSON.stringify(list));
+        const badge = document.getElementById('wishlistNavCount');
+        if (badge) {
+            if (list.length > 0) { badge.style.display = 'inline-block'; badge.textContent = list.length; }
+            else { badge.style.display = 'none'; }
+        }
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.innerText = str == null ? '' : String(str);
+        return div.innerHTML;
+    }
+
+    function render(list) {
+        const grid = document.getElementById('wishlistGrid');
+        const empty = document.getElementById('wishlistEmpty');
+        grid.innerHTML = '';
+
+        if (list.length === 0) {
+            empty.style.display = 'block';
+            return;
+        }
+        empty.style.display = 'none';
+
+        list.forEach(function (item) {
+            const col = document.createElement('div');
+            col.className = 'col-6 col-md-4 col-lg-3';
+
+            const hasInfo = item.name || item.image;
+            const href = item.href || '';
+            const image = item.image || 'https://via.placeholder.com/400x300?text=No+Image';
+            const productName = hasInfo ? item.name : 'Product #' + item.id;
+            const price = item.price ? (String(item.price).indexOf('GH₵') === 0 ? item.price : 'GH₵' + item.price) : '';
+
+            // The image itself is directly inside an anchor whenever we have a
+            // resolved link, so clicking anywhere on the image navigates to
+            // the actual Django product detail view.
+            const imageHtml = href
+                ? `<a href="${escapeHtml(href)}" class="d-block text-decoration-none" aria-label="View ${escapeHtml(productName)}">
+                        <img src="${escapeHtml(image)}" class="card-img-top" style="height: 160px; object-fit: cover; background: #f0f0f0; cursor: pointer;" alt="${escapeHtml(productName)}"
+                             onerror="this.onerror=null;this.src='https://via.placeholder.com/400x300?text=No+Image';">
+                   </a>`
+                : `<img src="${escapeHtml(image)}" class="card-img-top" style="height: 160px; object-fit: cover; background: #f0f0f0;" alt="${escapeHtml(productName)}"
+                       onerror="this.onerror=null;this.src='https://via.placeholder.com/400x300?text=No+Image';">`;
+
+            col.innerHTML = `
+                <div class="card h-100 product-card">
+                    ${imageHtml}
+                    <div class="card-body d-flex flex-column">
+                        ${href
+                            ? `<a href="${escapeHtml(href)}" class="text-decoration-none"><div class="fw-semibold small mb-1">${escapeHtml(productName)}</div></a>`
+                            : `<div class="fw-semibold small mb-1">${escapeHtml(productName)}</div>`}
+                        <div class="text-muted small mb-2">${escapeHtml(price)}</div>
+                        ${item.unavailable ? '<div class="text-muted small mb-2">This item is no longer available.</div>' : ''}
+                        <button type="button" class="btn btn-sm btn-outline-danger mt-auto sv-wishlist-remove" data-id="${escapeHtml(item.id)}">
+                            <i class="bi bi-trash me-1"></i>Remove
+                        </button>
+                    </div>
+                </div>
+            `;
+            grid.appendChild(col);
+        });
+
+        grid.querySelectorAll('.sv-wishlist-remove').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const id = btn.getAttribute('data-id');
+                const oldList = readList('sv_wishlist').filter(function (item) {
+                    const normalized = typeof item === 'string' ? item : item.id;
+                    return String(normalized) !== String(id);
+                });
+                const modernList = readList('shopvibe_saved_products_v1').filter(function (item) {
+                    return String(item.id) !== String(id);
+                });
+                localStorage.setItem('sv_wishlist', JSON.stringify(oldList));
+                localStorage.setItem('shopvibe_saved_products_v1', JSON.stringify(modernList));
+                const badge = document.getElementById('wishlistNavCount');
+                const remaining = getWishlist().length;
+                if (badge) {
+                    badge.textContent = remaining;
+                    badge.style.display = remaining ? 'inline-block' : 'none';
+                }
+                if (typeof svToast === 'function') svToast('Removed from wishlist', 'heart');
+                loadAndRender();
+            });
+        });
+    }
+
+    async function loadAndRender() {
+        const list = getWishlist();
+
+        // Paint immediately from whatever's cached in localStorage so
+        // images/names show right away without waiting on a request.
+        render(list.map(function (item) {
+            return Object.assign({}, item, { href: item.url || item.product_url || (item.slug ? '/product/' + encodeURIComponent(item.slug) + '/' : '') });
+        }));
+
+        if (list.length === 0) return;
+
+        // Then resolve each item's *real* product URL/slug from the database,
+        // since the save button that stored this item may not have captured
+        // a working link. This is what makes clicking the image reliable.
+        const ids = list.map(function (item) { return item.id; }).filter(function (id) { return /^\d+$/.test(String(id)); });
+        if (ids.length === 0) return;
+
+        try {
+            const res = await fetch('/api/wishlist/products/?ids=' + ids.join(','));
+            const data = await res.json();
+            const byId = {};
+            (data.products || []).forEach(function (p) { byId[String(p.id)] = p; });
+
+            const merged = list.map(function (item) {
+                const authoritative = byId[String(item.id)];
+                if (authoritative) {
+                    return {
+                        id: authoritative.id,
+                        name: authoritative.name || item.name,
+                        price: authoritative.price || item.price,
+                        image: authoritative.image || item.image,
+                        href: '/product/' + encodeURIComponent(authoritative.slug) + '/',
+                        unavailable: authoritative.is_active === false
+                    };
+                }
+                // Not found in the database (deleted, or an id we can't trust) —
+                // keep whatever was cached, but don't link it anywhere.
+                return Object.assign({}, item, { href: '', unavailable: true });
+            });
+            render(merged);
+        } catch (e) {
+            // Network hiccup — leave the initial client-only render in place.
+            console.error('Could not refresh wishlist product links', e);
+        }
+    }
+
+    loadAndRender();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,296 @@
+{% extends "store/base.html" %}
+{% block title %}Seller Analytics | ShopVibe{% endblock %}
+
+{% block content %}
+<style>
+    /* ── Theme Variables & Base ── */
+    :root {
+        --chart-bg: var(--card);
+        --chart-text: var(--tx);
+        --chart-border: var(--border);
+        --chart-muted: var(--muted);
+        --chart-primary: var(--p);
+    }
+    .analytics-wrapper { padding: 20px 0; }
+    
+    /* Metric Cards */
+    .metric-card {
+        background: var(--chart-bg);
+        border: 1px solid var(--chart-border);
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .metric-value { font-size: 1.8rem; font-weight: 700; color: var(--chart-primary); }
+    .metric-label { color: var(--chart-muted); font-size: 0.85rem; margin-top: 4px; }
+
+    /* Chart Card */
+    .chart-card {
+        background: var(--chart-bg);
+        border: 1px solid var(--chart-border);
+        border-radius: 12px;
+        padding: 20px;
+        height: 100%;
+    }
+    .chart-container { position: relative; height: 380px; width: 100%; }
+
+    /* Interactive Legend */
+    .legend-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;
+        cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
+        user-select: none;
+    }
+    .legend-chip:hover { background: var(--chart-border); }
+    .legend-chip.active { background: var(--chart-primary)22; border-color: var(--chart-primary); color: var(--chart-text); }
+    .legend-chip.inactive { opacity: 0.5; text-decoration: line-through; }
+
+    /* Utilities */
+    .live-badge { background: #10b98122; color: #10b981; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .empty-state { text-align: center; padding: 40px 0; color: var(--chart-muted); }
+</style>
+
+<div class="analytics-wrapper">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">📊 Seller Analytics</h2>
+            <p class="text-muted mb-0">Real-time daily sales breakdown by product</p>
+        </div>
+        <span class="live-badge">● Live Sync</span>
+    </div>
+
+    <!-- Metrics Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="metric-card">
+                <div class="metric-value">GH₵{{ revenue|floatformat:2 }}</div>
+                <div class="metric-label">Total Revenue</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-card">
+                <div class="metric-value">{{ order_count }}</div>
+                <div class="metric-label">Total Orders</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-card">
+                <div class="metric-value">{{ top_products|length }}</div>
+                <div class="metric-label">Active Products</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart & Controls -->
+    <div class="chart-card">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="fw-bold mb-0">📈 Daily Sales by Product (Last 7 Days)</h5>
+            <div class="d-flex align-items-center gap-3">
+                <small class="text-muted" id="lastUpdated">Initializing...</small>
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="stackToggle" checked>
+                    <label class="form-check-label small" for="stackToggle">Stacked</label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <canvas id="dailySalesChart"></canvas>
+            <div id="emptyState" class="empty-state" style="display:none;">
+                <i class="bi bi-graph-up-arrow" style="font-size: 3rem; opacity: 0.3;"></i>
+                <p class="mt-2">No sales data yet. Make your first sale to see analytics!</p>
+            </div>
+        </div>
+
+        <!-- Dynamic Legend -->
+        <div id="chartLegend" class="d-flex flex-wrap gap-2 mt-3 justify-content-center"></div>
+    </div>
+</div>
+
+<!-- Chart.js & Real-time Logic -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+<script>
+(function() {
+    const API_URL = "{% url 'store:seller_daily_sales_api' %}";
+    let chart = null;
+    let pollTimer = null;
+    const visibility = {};
+
+    const PALETTE = [
+        { l: '#f68b1e', d: '#ffb366' }, { l: '#3b82f6', d: '#93c5fd' },
+        { l: '#10b981', d: '#6ee7b7' }, { l: '#8b5cf6', d: '#c4b5fd' },
+        { l: '#f43f5e', d: '#fda4af' }, { l: '#14b8a6', d: '#5eead4' }
+    ];
+
+    function getTheme() {
+        const cs = getComputedStyle(document.documentElement);
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+                       document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        return {
+            text: cs.getPropertyValue('--tx').trim() || (isDark ? '#f1f5f9' : '#212529'),
+            border: cs.getPropertyValue('--border').trim() || (isDark ? '#374151' : '#dee2e6'),
+            primary: cs.getPropertyValue('--p').trim() || '#f68b1e',
+            bg: cs.getPropertyValue('--card').trim() || (isDark ? '#1e293b' : '#ffffff'),
+            isDark
+        };
+    }
+
+    function getColor(idx, theme) {
+        return theme.isDark ? PALETTE[idx % PALETTE.length].d : PALETTE[idx % PALETTE.length].l;
+    }
+
+    function renderLegend(datasets) {
+        const container = document.getElementById('chartLegend');
+        if (!container) return;
+        container.innerHTML = datasets.map((ds, i) => {
+            const c = getColor(i, getTheme());
+            const active = visibility[ds.label] !== false;
+            return `<div class="legend-chip ${active ? 'active' : 'inactive'}" 
+                         onclick="window.toggleProduct('${ds.label}')" 
+                         style="border-color: ${active ? c : getTheme().border}; color: ${active ? getTheme().text : getTheme().muted}">
+                        <span style="width:10px;height:10px;background:${c};border-radius:50%;display:inline-block;"></span>
+                        ${ds.label}
+                    </div>`;
+        }).join('');
+    }
+
+    window.toggleProduct = function(label) {
+        if (!chart) return;
+        const show = visibility[label] === false;
+        visibility[label] = show;
+        chart.data.datasets.forEach(ds => { if (ds.label === label) ds.hidden = !show; });
+        chart.update('none');
+        renderLegend(chart.data.datasets);
+    };
+
+    function applyChart(labels, datasets) {
+        const ctx = document.getElementById('dailySalesChart');
+        const empty = document.getElementById('emptyState');
+        if (!ctx) return;
+
+        const theme = getTheme();
+        const stacked = document.getElementById('stackToggle').checked;
+        const hasData = datasets.some(d => d.data.some(v => v > 0));
+
+        console.log('📊 Chart Data:', { labels, datasets, hasData });
+
+        ctx.style.display = hasData ? 'block' : 'none';
+        empty.style.display = hasData ? 'none' : 'block';
+        if (!hasData) return;
+
+        datasets.forEach((ds, i) => {
+            const c = getColor(i, theme);
+            ds.backgroundColor = c + (theme.isDark ? '44' : '22');
+            ds.borderColor = c;
+            ds.hoverBackgroundColor = c;
+            ds.borderWidth = 1;
+            if (visibility[ds.label] === undefined) visibility[ds.label] = true;
+            ds.hidden = !visibility[ds.label];
+        });
+
+        if (chart) {
+            chart.data.labels = labels;
+            chart.data.datasets = datasets;
+            chart.options.scales.x.stacked = stacked;
+            chart.options.scales.y.stacked = stacked;
+            chart.options.plugins.tooltip.backgroundColor = theme.bg;
+            chart.options.plugins.tooltip.titleColor = theme.text;
+            chart.options.plugins.tooltip.bodyColor = theme.text;
+            chart.options.scales.x.ticks.color = theme.text;
+            chart.options.scales.y.ticks.color = theme.text;
+            chart.options.scales.x.grid.color = theme.border + '22';
+            chart.options.scales.y.grid.color = theme.border + '22';
+            chart.update('none');
+        } else {
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 400 },
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: theme.bg,
+                            titleColor: theme.text,
+                            bodyColor: theme.text,
+                            borderColor: theme.border,
+                            borderWidth: 1,
+                            padding: 10,
+                            callbacks: { label: c => ` ${c.dataset.label}: GH₵${c.parsed.y.toFixed(2)}` }
+                        }
+                    },
+                    scales: {
+                        x: { stacked, ticks: { color: theme.text }, grid: { color: theme.border + '22' } },
+                        y: { stacked, beginAtZero: true, ticks: { color: theme.text, callback: v => `GH₵${v}` }, grid: { color: theme.border + '22' } }
+                    }
+                }
+            });
+        }
+        renderLegend(datasets);
+    }
+
+    function sync() {
+        fetch(API_URL)
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(json => {
+                console.log('✅ API Response:', json);
+                applyChart(json.labels || [], json.datasets || []);
+                document.getElementById('lastUpdated').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+            })
+            .catch(err => {
+                console.error('❌ Analytics Sync Failed:', err);
+                document.getElementById('lastUpdated').textContent = 'Sync error';
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        sync();
+        pollTimer = setInterval(sync, 15000);
+
+        document.getElementById('stackToggle').addEventListener('change', e => {
+            if (chart) {
+                chart.options.scales.x.stacked = e.target.checked;
+                chart.options.scales.y.stacked = e.target.checked;
+                chart.update('none');
+            }
+        });
+
+        new MutationObserver(() => {
+            if (chart) {
+                const theme = getTheme();
+                chart.data.datasets.forEach((ds, i) => {
+                    const c = getColor(i, theme);
+                    ds.backgroundColor = c + (theme.isDark ? '44' : '22');
+                    ds.borderColor = c;
+                });
+                const opts = chart.options;
+                opts.plugins.tooltip.backgroundColor = theme.bg;
+                opts.plugins.tooltip.titleColor = theme.text;
+                opts.plugins.tooltip.bodyColor = theme.text;
+                opts.scales.x.ticks.color = theme.text;
+                opts.scales.y.ticks.color = theme.text;
+                opts.scales.x.grid.color = theme.border + '22';
+                opts.scales.y.grid.color = theme.border + '22';
+                chart.update('none');
+                renderLegend(chart.data.datasets);
+            }
+        }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-bs-theme', 'class'] });
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (pollTimer) clearInterval(pollTimer);
+        if (chart) chart.destroy();
+    });
+})();
+</script>
+{% endblock %}

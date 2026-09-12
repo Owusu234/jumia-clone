@@ -1,0 +1,118 @@
+{% extends "store/base.html" %}
+{% block title %}Seller Dashboard | ShopVibe{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="fw-bold mb-1">🏪 {{ profile.store_name }}</h2>
+        <p class="text-muted mb-0">
+            {% if profile.is_verified %}<span class="badge bg-success me-1">✅ Verified</span>{% else %}<span class="badge bg-warning text-dark me-1">⏳ Pending</span>{% endif %}
+            Dashboard & Order Management
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'store:seller_analytics' %}" class="btn btn-primary">📊 View Analytics</a>
+        <a href="{% url 'store:upload_product' %}" class="btn btn-outline-primary">➕ Add Product</a>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4"><div class="card p-3 text-center bg-white shadow-sm"><h3 class="text-success mb-0">{{ stats.count }}</h3><small class="text-muted">Total Orders</small></div></div>
+    <div class="col-md-4"><div class="card p-3 text-center bg-white shadow-sm"><h3 class="text-primary mb-0">{{ stats.units }}</h3><small class="text-muted">Units Sold</small></div></div>
+    <div class="col-md-4"><div class="card p-3 text-center bg-white shadow-sm"><h3 class="text-warning mb-0">GH₵{{ stats.sales|floatformat:2 }}</h3><small class="text-muted">Total Revenue</small></div></div>
+</div>
+
+<!-- Buyer Orders -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold py-3 d-flex justify-content-between align-items-center">
+        <span>📦 Buyer Orders</span>
+        <small class="text-muted">{{ orders.count }} order{{ orders.count|pluralize }}</small>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr><th>Order #</th><th>Buyer</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                {% for o in orders %}
+                <tr>
+                    <td><a href="{% url 'store:order_receipt' o.id %}" target="_blank" class="fw-bold">#{{ o.id }}</a></td>
+                    <td>{{ o.user.get_full_name|default:o.user.username }}<br><small class="text-muted">{{ o.user.email }}</small></td>
+                    <td>{{ o.items.count }} item{{ o.items.count|pluralize }}</td>
+                    <td class="fw-bold">GH₵{{ o.total|floatformat:2 }}</td>
+                   <td>
+                           <form method="POST" action="{% url 'store:update_order_status' o.id %}" class="d-inline">
+                                {% csrf_token %}
+                                <select name="status" class="form-select form-select-sm">
+                                    <!-- ✅ FIXED: Use loop variable 'o' instead of 'order' -->
+                                    <option value="pending" {% if o.status == "pending" %}selected{% endif %}>Pending</option>
+                                    <option value="processing" {% if o.status == "processing" %}selected{% endif %}>Processing</option>
+                                    <option value="shipped" {% if o.status == "shipped" %}selected{% endif %}>Shipped</option>
+                                    <option value="in_transit" {% if o.status == "in_transit" %}selected{% endif %}>In Transit</option>
+                                    <option value="out_for_delivery" {% if o.status == "out_for_delivery" %}selected{% endif %}>Out for Delivery</option>
+                                    <option value="delivered" {% if o.status == "delivered" %}selected{% endif %}>Delivered</option>
+                                    <option value="cancelled" {% if o.status == "cancelled" %}selected{% endif %}>Cancelled</option>
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-primary mt-2">Update</button>
+                            </form>
+                         
+                    </td>
+                    <td>
+                        <a href="{% url 'store:order_receipt' o.id %}" class="btn btn-sm btn-outline-primary" target="_blank" title="View Receipt">🧾</a>
+                        {% if o.tracking_number %}<span class="badge bg-info ms-1">Tracked</span>{% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center py-4 text-muted">No orders yet. Start selling to receive buyer orders.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Products -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold py-3 d-flex justify-content-between align-items-center">
+        <span>📦 Your Products</span>
+        <small class="text-muted">{{ products.count }} item{{ products.count|pluralize }}</small>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr><th>Product</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                {% for p in products %}
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <img src="{{ p.get_image }}" class="rounded" style="width:40px;height:40px;object-fit:cover;background:var(--bg)">
+                            <div><div class="fw-medium">{{ p.name }}</div><small class="text-muted">{{ p.category.name }}</small></div>
+                        </div>
+                    </td>
+                    <td class="fw-bold">GH₵{{ p.price }}</td>
+                    <td>
+                        {% if p.stock > 10 %}<span class="badge bg-success-subtle text-success">In Stock</span>
+                        {% elif p.stock > 0 %}<span class="badge bg-warning-subtle text-warning">Low: {{ p.stock }}</span>
+                        {% else %}<span class="badge bg-danger-subtle text-danger">Out</span>{% endif %}
+                    </td>
+                    <td><span class="badge {% if p.is_active %}bg-success{% else %}bg-secondary{% endif %}">{{ p.is_active|yesno:"Active,Hidden" }}</span></td>
+                    <td>
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'store:product_detail' p.slug %}" class="btn btn-sm btn-outline-primary" target="_blank">View</a>
+                            <a href="{% url 'store:upload_product' %}?edit={{ p.id }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                            <form method="post" action="{% url 'store:delete_product' p.id %}" class="d-inline" onsubmit="return confirm('Permanently delete &quot;{{ p.name }}&quot;?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-center py-4 text-muted">No products listed yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
