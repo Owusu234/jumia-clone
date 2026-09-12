@@ -264,8 +264,8 @@
                 <i class="bi bi-cart{% if request.resolver_match.url_name == 'cart' %}-fill{% endif %}"></i>Cart
                 {% if cart_count %}<span class="tab-badge">{{ cart_count }}</span>{% endif %}
             </a>
-            <a href="#" class="ai-chat-tab" onclick="return svOpenChatFromTab();">
-                <i class="bi bi-robot"></i>AI Chat
+            <a href="#" class="ai-chat-tab ai-chat-fab" onclick="return svOpenChatFromTab();" aria-label="AI Chat">
+                <span class="ai-chat-fab-circle"><i class="bi bi-robot"></i></span>
             </a>
         </div>
     </nav>
