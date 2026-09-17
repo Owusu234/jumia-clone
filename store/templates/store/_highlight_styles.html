@@ -1,0 +1,156 @@
+<style>
+    /* ── Section header ─────────────────────────────────────────── */
+    .hl-eyebrow {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: var(--warning-bg); color: var(--warning);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-radius: var(--radius-pill);
+        padding: 7px 16px; font-size: 0.8rem; font-weight: 700;
+        margin-bottom: 14px;
+    }
+    .hl-title {
+        font-family: var(--font-display, inherit);
+        font-weight: 800; font-size: 2rem; margin-bottom: 10px;
+    }
+    .hl-intro { color: var(--text-muted); max-width: 720px; line-height: 1.7; }
+    .hl-intro strong { color: var(--text); }
+
+    /* ── Points legend cards ────────────────────────────────────── */
+    .hl-legend {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-lg); padding: 18px; margin: 22px 0 26px;
+    }
+    .hl-point-card {
+        background: var(--bg); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 14px 16px; height: 100%;
+    }
+    .hl-point-card .lbl {
+        display: flex; align-items: center; gap: 7px;
+        font-size: 0.78rem; font-weight: 600; color: var(--text-muted);
+        margin-bottom: 6px;
+    }
+    .hl-point-card .val { font-size: 1.15rem; font-weight: 800; color: var(--text); }
+    .hl-point-card .hint { font-size: 0.72rem; color: var(--text-muted); }
+    .hl-point-card.reward {
+        background: var(--warning-bg); border-color: rgba(245, 158, 11, 0.35);
+    }
+    .hl-point-card.reward .val, .hl-point-card.reward .lbl { color: var(--warning); }
+
+    /* ── Filter tabs ────────────────────────────────────────────── */
+    .hl-tabs { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
+    .hl-tabs::-webkit-scrollbar { display: none; }
+    .hl-tab {
+        white-space: nowrap; text-decoration: none;
+        background: var(--surface); border: 1px solid var(--border);
+        color: var(--text-muted); font-size: 0.85rem; font-weight: 600;
+        padding: 10px 18px; border-radius: var(--radius-pill);
+        transition: all 0.2s var(--ease);
+    }
+    .hl-tab:hover { border-color: var(--primary); color: var(--text); }
+    .hl-tab.active { background: var(--tx); color: var(--bg); border-color: var(--tx); }
+    .hl-sync {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.72rem; color: var(--text-muted);
+        letter-spacing: 0.04em; margin: 4px 0 18px;
+    }
+
+    /* ── Highlight card ─────────────────────────────────────────── */
+    .hl-card {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-lg); overflow: hidden;
+        margin-bottom: 22px; transition: box-shadow 0.25s var(--ease);
+    }
+    .hl-card:hover { box-shadow: var(--shadow); }
+    .hl-card-head { padding: 14px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .hl-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
+    .hl-author { font-weight: 700; line-height: 1.2; }
+    .hl-handle { font-size: 0.78rem; color: var(--text-muted); }
+    .hl-verified {
+        background: var(--success-bg); color: var(--success);
+        border-radius: var(--radius-pill); padding: 3px 10px;
+        font-size: 0.72rem; font-weight: 700;
+    }
+
+    .hl-product {
+        display: flex; align-items: center; gap: 12px; text-decoration: none;
+        margin: 0 16px 14px; padding: 10px 12px;
+        background: var(--bg); border: 1px solid var(--border);
+        border-radius: var(--radius); color: inherit;
+        transition: border-color 0.2s var(--ease);
+    }
+    .hl-product:hover { border-color: var(--primary); color: inherit; }
+    .hl-product img {
+        width: 44px; height: 44px; object-fit: cover;
+        border-radius: 10px; background: #fff;
+    }
+    .hl-product .nm { font-weight: 600; font-size: 0.9rem; line-height: 1.25; }
+    .hl-product .meta { font-size: 0.74rem; color: var(--text-muted); }
+
+    .hl-media { width: 100%; max-height: 460px; object-fit: cover; background: var(--bg); display: block; }
+    .hl-body { padding: 16px; }
+    .hl-body h5 { font-weight: 800; margin-bottom: 8px; }
+    .hl-body p { color: var(--text-muted); line-height: 1.65; margin-bottom: 0; }
+
+    /* ── Progress to goal ───────────────────────────────────────── */
+    .hl-progress-box {
+        margin: 14px 16px; padding: 12px 14px;
+        background: var(--bg); border: 1px solid var(--border);
+        border-radius: var(--radius);
+    }
+    .hl-progress-top {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.85rem; margin-bottom: 8px;
+    }
+    .hl-progress-top .pts { font-weight: 700; }
+    .hl-progress-top .goal { color: var(--text-muted); font-size: 0.8rem; }
+    .hl-bar { height: 8px; background: var(--border); border-radius: var(--radius-pill); overflow: hidden; }
+    .hl-bar > span {
+        display: block; height: 100%; border-radius: var(--radius-pill);
+        background: linear-gradient(90deg, #f59e0b, #10b981);
+        transition: width 0.5s var(--ease);
+    }
+    .hl-voucher {
+        display: none; align-items: center; justify-content: space-between;
+        gap: 10px; margin-top: 10px; padding: 8px 12px;
+        background: var(--warning-bg); border: 1px dashed rgba(245, 158, 11, 0.5);
+        border-radius: var(--radius-sm);
+    }
+    .hl-voucher.show { display: flex; }
+    .hl-voucher code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-weight: 700; color: var(--warning); font-size: 0.85rem;
+    }
+
+    /* ── Action bar ─────────────────────────────────────────────── */
+    .hl-actions { display: flex; gap: 8px; padding: 10px 16px 16px; flex-wrap: wrap; }
+    .hl-act {
+        display: inline-flex; align-items: center; gap: 7px;
+        background: var(--bg); border: 1px solid var(--border);
+        border-radius: var(--radius-pill); padding: 8px 16px;
+        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+        cursor: pointer; transition: all 0.18s var(--ease);
+    }
+    .hl-act:hover { border-color: var(--primary); color: var(--text); }
+    .hl-act[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .hl-act.liked { background: var(--danger-bg); border-color: rgba(239,68,68,0.4); color: var(--danger); }
+    .hl-act .pt { font-size: 0.7rem; opacity: 0.75; }
+
+    /* ── Comments ───────────────────────────────────────────────── */
+    .hl-comments { padding: 0 16px 16px; display: none; }
+    .hl-comments.open { display: block; }
+    .hl-comment { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+    .hl-comment img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+    .hl-comment .who { font-size: 0.8rem; font-weight: 700; }
+    .hl-comment .txt { font-size: 0.86rem; color: var(--text-muted); margin: 0; }
+
+    /* ── Wallet strip ───────────────────────────────────────────── */
+    .hl-wallet {
+        background: var(--success-bg); border: 1px solid rgba(16,185,129,0.3);
+        border-radius: var(--radius); padding: 14px 16px; margin-bottom: 20px;
+    }
+
+    @media (max-width: 575px) {
+        .hl-title { font-size: 1.5rem; }
+        .hl-media { max-height: 320px; }
+    }
+</style>

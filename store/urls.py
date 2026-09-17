@@ -86,4 +86,22 @@ urlpatterns = [
     path("analytics/", views.analytics_dashboard, name="analytics_dashboard"),
     path("api/analytics/", views.analytics_api, name="analytics_api"),
     path("api/seller/daily-sales/", views.seller_daily_sales_api, name="seller_daily_sales_api"),
+
+    # ==================== COMMUNITY HIGHLIGHTS ====================
+
+    path("community/", views.community_highlights, name="community_highlights"),
+    path("community/<int:highlight_id>/", views.highlight_detail, name="highlight_detail"),
+    path("community/post/", views.create_highlight, name="create_highlight"),
+    path("community/<int:highlight_id>/edit/", views.edit_highlight, name="edit_highlight"),
+    path("community/<int:highlight_id>/delete/", views.delete_highlight, name="delete_highlight"),
+
+    # Engagement endpoints (AJAX) — like +1, comment +2, share +3
+    path("community/<int:highlight_id>/like/", views.toggle_highlight_like, name="toggle_highlight_like"),
+    path("community/<int:highlight_id>/comment/", views.add_highlight_comment, name="add_highlight_comment"),
+    path("community/<int:highlight_id>/share/", views.share_highlight, name="share_highlight"),
+
+    # Seller goal + buyer voucher wallet
+    path("seller/highlight-goal/", views.set_highlight_goal, name="set_highlight_goal"),
+    path("vouchers/", views.my_vouchers, name="my_vouchers"),
+    path("api/voucher/validate/", views.validate_voucher, name="validate_voucher"),
 ]

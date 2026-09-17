@@ -1,0 +1,141 @@
+<script>
+(function () {
+    const CSRF = "{{ csrf_token }}";
+    const IS_AUTH = {{ user.is_authenticated|yesno:"true,false" }};
+    const LOGIN_URL = "{% url 'store:login' %}";
+
+    function toast(msg, kind) {
+        const stack = document.getElementById('toastStack');
+        if (!stack) { return; }
+        const el = document.createElement('div');
+        el.className = 'alert alert-' + (kind || 'success') + ' shadow-sm py-2 px-3 mb-2';
+        el.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:2000;max-width:90vw;';
+        el.textContent = msg;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 3200);
+    }
+
+    window.hlCopy = function (code, btn) {
+        navigator.clipboard.writeText(code).then(() => {
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check2"></i> Copied';
+            setTimeout(() => { btn.innerHTML = original; }, 1800);
+        });
+    };
+
+    async function post(url, data) {
+        const body = new FormData();
+        for (const k in data) { body.append(k, data[k]); }
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+            body: body,
+        });
+        return res.json();
+    }
+
+    /* Repaint a card from the server's authoritative numbers. */
+    function paint(card, d) {
+        card.querySelector('[data-points]').textContent = d.points;
+        card.querySelector('[data-bar]').style.width = d.progress + '%';
+        card.querySelector('[data-likes]').textContent = d.likes;
+        card.querySelector('[data-comments]').textContent = d.comments;
+        card.querySelector('[data-shares]').textContent = d.shares;
+
+        const likeBtn = card.querySelector('[data-like]');
+        likeBtn.classList.toggle('liked', d.liked);
+        likeBtn.querySelector('i').className = 'bi bi-heart' + (d.liked ? '-fill' : '');
+
+        if (d.unlocked) {
+            const box = card.querySelector('[data-voucher-box]');
+            box.classList.add('show');
+            const codeEl = box.querySelector('[data-voucher-code]');
+            if (d.voucher_code) { codeEl.textContent = d.voucher_code; }
+        }
+        if (d.just_unlocked) {
+            toast('🎁 Goal reached — a ' + d.discount_percent + '% voucher was issued to the buyer!', 'warning');
+        } else if (d.awarded > 0) {
+            toast('+' + d.awarded + ' point' + (d.awarded > 1 ? 's' : '') + ' — ' + d.remaining + ' to go', 'success');
+        }
+    }
+
+    function cardOf(el) { return el.closest('.hl-card'); }
+    /* Endpoints are rendered onto each card server-side, so this keeps
+       working no matter where the store app is mounted. */
+    function urlOf(el, key) { return cardOf(el).dataset[key]; }
+
+    document.addEventListener('click', async function (e) {
+        /* ── Like ── */
+        const likeBtn = e.target.closest('[data-like]');
+        if (likeBtn && !likeBtn.disabled) {
+            if (!IS_AUTH) { window.location = LOGIN_URL; return; }
+            const card = cardOf(likeBtn);
+            likeBtn.disabled = true;
+            try {
+                const d = await post(urlOf(likeBtn, 'likeUrl'), {});
+                if (d.ok) { paint(card, d); } else { toast(d.error || 'Something went wrong', 'danger'); }
+            } finally { likeBtn.disabled = false; }
+            return;
+        }
+
+        /* ── Toggle comment panel ── */
+        const toggleBtn = e.target.closest('[data-toggle-comments]');
+        if (toggleBtn) {
+            cardOf(toggleBtn).querySelector('[data-comment-panel]').classList.toggle('open');
+            return;
+        }
+
+        /* ── Share ── */
+        const shareBtn = e.target.closest('[data-share]');
+        if (shareBtn) {
+            if (!IS_AUTH) { window.location = LOGIN_URL; return; }
+            const card = cardOf(shareBtn);
+            const d = await post(urlOf(shareBtn, 'shareUrl'), {});
+            if (!d.ok) { toast(d.error || 'Could not share', 'danger'); return; }
+            paint(card, d);
+            const shareData = { title: 'ShopVibe Community Highlight', url: d.share_url };
+            if (navigator.share) {
+                try { await navigator.share(shareData); } catch (err) { /* user dismissed */ }
+            } else {
+                navigator.clipboard.writeText(d.share_url);
+                toast('Link copied to clipboard', 'success');
+            }
+            return;
+        }
+
+        /* ── Send comment ── */
+        const sendBtn = e.target.closest('[data-comment-send]');
+        if (sendBtn) {
+            const card = cardOf(sendBtn);
+            const input = card.querySelector('[data-comment-input]');
+            const text = input.value.trim();
+            if (!text) { return; }
+            sendBtn.disabled = true;
+            try {
+                const d = await post(card.dataset.commentUrl, { body: text });
+                if (!d.ok) { toast(d.error || 'Could not post comment', 'danger'); return; }
+                input.value = '';
+                const list = card.querySelector('[data-comment-list]');
+                const row = document.createElement('div');
+                row.className = 'hl-comment';
+                row.innerHTML =
+                    '<img src="' + d.comment.avatar + '" alt="">' +
+                    '<div><div class="who">@' + d.comment.user +
+                    ' <span class="text-muted fw-normal small">just now</span></div>' +
+                    '<p class="txt"></p></div>';
+                row.querySelector('.txt').textContent = d.comment.body;
+                list.appendChild(row);
+                paint(card, d);
+            } finally { sendBtn.disabled = false; }
+        }
+    });
+
+    /* Enter key sends a comment */
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.matches('[data-comment-input]')) {
+            e.preventDefault();
+            cardOf(e.target).querySelector('[data-comment-send]').click();
+        }
+    });
+})();
+</script>

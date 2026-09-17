@@ -611,3 +611,358 @@ class AnalyticsCache(models.Model):
     
     class Meta:
         indexes = [models.Index(fields=['-updated_at'])]
+
+# ==================== COMMUNITY HIGHLIGHTS & ENGAGEMENT REWARDS ====================
+#
+# Proof-of-purchase social feed. A buyer who has a *paid + delivered* order can
+# post an unboxing highlight for an item in it. Other shoppers engage with the
+# post and every interaction earns the post points:
+#
+#       Like     +1        Comment  +2        Share  +3
+#
+# The seller sets a points goal (e.g. 15 pts) and a discount percentage on
+# their store. When a highlight reaches that goal, a unique discount voucher
+# is minted automatically and deposited into the buyer's wallet.
+#
+# Anti-gaming rules, enforced in HighlightEngagement.award():
+#   • the author's own interactions never earn points
+#   • one like per user per highlight (un-liking removes the point)
+#   • one share point per user per highlight, however many times they share
+#   • only a user's FIRST comment on a highlight earns points
+# --------------------------------------------------------------------------
+
+import secrets
+import string
+from decimal import Decimal
+from datetime import timedelta
+
+
+class SellerHighlightGoal(models.Model):
+    """The engagement target a seller sets for unboxing highlights of their
+    products, plus the reward a buyer unlocks by reaching it."""
+
+    seller = models.OneToOneField(
+        SellerProfile, on_delete=models.CASCADE, related_name="highlight_goal"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Uncheck to pause rewards. Buyers can still post highlights."
+    )
+    points_goal = models.PositiveIntegerField(
+        default=15,
+        help_text="Engagement points a highlight must reach to unlock the reward (e.g. 15)."
+    )
+    discount_percent = models.PositiveSmallIntegerField(
+        default=10,
+        help_text="Percentage off the buyer receives as a voucher, 1–90."
+    )
+    voucher_validity_days = models.PositiveSmallIntegerField(
+        default=30, help_text="How many days the unlocked voucher stays valid."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Seller Highlight Goal"
+        verbose_name_plural = "Seller Highlight Goals"
+
+    def __str__(self):
+        return f"{self.seller.store_name}: {self.points_goal} pts → {self.discount_percent}% off"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.points_goal < 1:
+            raise ValidationError({"points_goal": "The goal must be at least 1 point."})
+        if not 1 <= self.discount_percent <= 90:
+            raise ValidationError({"discount_percent": "Discount must be between 1% and 90%."})
+
+    @classmethod
+    def for_seller(cls, seller):
+        """Always return a goal for a seller, creating the default if needed."""
+        if seller is None:
+            return None
+        goal, _ = cls.objects.get_or_create(seller=seller)
+        return goal
+
+
+class CommunityHighlight(models.Model):
+    """A buyer's unboxing post, permanently tied to a real delivered order."""
+
+    MEDIA_IMAGE = "image"
+    MEDIA_VIDEO = "video"
+    MEDIA_CHOICES = [(MEDIA_IMAGE, "Photo"), (MEDIA_VIDEO, "Video")]
+
+    buyer = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="community_highlights"
+    )
+    order = models.ForeignKey(
+        Order, on_delete=models.CASCADE, related_name="highlights"
+    )
+    order_item = models.ForeignKey(
+        OrderItem, on_delete=models.CASCADE, related_name="highlights"
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="highlights"
+    )
+    seller = models.ForeignKey(
+        SellerProfile, on_delete=models.CASCADE, related_name="highlights",
+        null=True, blank=True
+    )
+
+    title = models.CharField(max_length=160)
+    body = models.TextField(max_length=2000, help_text="How was the unboxing?")
+    media_url = models.URLField(max_length=1000, blank=True, default="")
+    media_type = models.CharField(
+        max_length=10, choices=MEDIA_CHOICES, default=MEDIA_IMAGE
+    )
+    media_storage_path = models.CharField(max_length=500, blank=True, default="")
+
+    # Snapshot of the seller's goal at posting time, so a seller changing
+    # their target later never moves the goalposts on a live highlight.
+    points_goal = models.PositiveIntegerField(default=15)
+    discount_percent = models.PositiveSmallIntegerField(default=10)
+
+    total_points = models.PositiveIntegerField(default=0, db_index=True)
+    like_count = models.PositiveIntegerField(default=0)
+    comment_count = models.PositiveIntegerField(default=0)
+    share_count = models.PositiveIntegerField(default=0)
+
+    reward_unlocked = models.BooleanField(default=False, db_index=True)
+    unlocked_at = models.DateTimeField(null=True, blank=True)
+
+    is_active = models.BooleanField(default=True)
+    is_approved = models.BooleanField(
+        default=True, help_text="Uncheck to hide from the public feed."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Community Highlight"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["buyer", "order_item"], name="uniq_highlight_per_order_item"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["-created_at"], name="store_ch_created_idx"),
+            models.Index(fields=["-total_points"], name="store_ch_points_idx"),
+            models.Index(fields=["seller", "-created_at"], name="store_ch_seller_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.buyer.username} → {self.product.name} ({self.total_points} pts)"
+
+    # ── eligibility ───────────────────────────────────────────────────────
+    @staticmethod
+    def eligible_order_items(user):
+        """OrderItems this user may still post about: paid, delivered, theirs,
+        and not already used for a highlight."""
+        return (
+            OrderItem.objects
+            .filter(
+                order__user=user,
+                order__payment_status="paid",
+                order__status="delivered",
+            )
+            .exclude(highlights__buyer=user)
+            .select_related("order", "product", "product__seller")
+            .order_by("-order__created_at")
+        )
+
+    # ── progress helpers used by the templates ────────────────────────────
+    @property
+    def progress_percent(self):
+        if not self.points_goal:
+            return 100
+        return min(100, int(round(self.total_points * 100 / self.points_goal)))
+
+    @property
+    def points_remaining(self):
+        return max(0, self.points_goal - self.total_points)
+
+    @property
+    def is_video(self):
+        return self.media_type == self.MEDIA_VIDEO
+
+    def get_media_url(self):
+        return self.media_url or (self.product.get_image() if self.product_id else "")
+
+    # ── scoring ───────────────────────────────────────────────────────────
+    def recalculate(self, commit=True):
+        """Recount points and per-action tallies from the engagement rows."""
+        rows = self.engagements.all()
+        self.like_count = rows.filter(action=HighlightEngagement.LIKE).count()
+        self.share_count = rows.filter(action=HighlightEngagement.SHARE).count()
+        self.comment_count = self.comments.count()
+        self.total_points = rows.aggregate(t=models.Sum("points"))["t"] or 0
+        if commit:
+            self.save(update_fields=[
+                "like_count", "share_count", "comment_count",
+                "total_points", "updated_at",
+            ])
+        return self.total_points
+
+    def maybe_unlock_reward(self):
+        """Mint the buyer's voucher the moment the goal is met. Returns the
+        voucher if one was created on this call, else None."""
+        if self.reward_unlocked or self.total_points < self.points_goal:
+            return None
+        goal = SellerHighlightGoal.for_seller(self.seller) if self.seller else None
+        if goal and not goal.is_active:
+            return None
+
+        validity = goal.voucher_validity_days if goal else 30
+        voucher = DiscountVoucher.objects.create(
+            code=DiscountVoucher.generate_code(),
+            buyer=self.buyer,
+            seller=self.seller,
+            highlight=self,
+            discount_percent=self.discount_percent,
+            expires_at=timezone.now() + timedelta(days=validity),
+        )
+        self.reward_unlocked = True
+        self.unlocked_at = timezone.now()
+        self.save(update_fields=["reward_unlocked", "unlocked_at", "updated_at"])
+        return voucher
+
+
+class HighlightEngagement(models.Model):
+    """One scoring row per user per point-earning action on a highlight."""
+
+    LIKE = "like"
+    COMMENT = "comment"
+    SHARE = "share"
+    ACTION_CHOICES = [(LIKE, "Like"), (COMMENT, "Comment"), (SHARE, "Share")]
+
+    # The published points table. Change here, changes everywhere.
+    POINT_VALUES = {LIKE: 1, COMMENT: 2, SHARE: 3}
+
+    highlight = models.ForeignKey(
+        CommunityHighlight, on_delete=models.CASCADE, related_name="engagements"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="highlight_engagements"
+    )
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
+    points = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["highlight", "user", "action"],
+                name="uniq_engagement_per_user_action",
+            )
+        ]
+        indexes = [models.Index(fields=["highlight", "action"], name="store_he_hl_action_idx")]
+
+    def __str__(self):
+        return f"{self.user.username} {self.action} (+{self.points})"
+
+    def save(self, *args, **kwargs):
+        if not self.points:
+            self.points = self.POINT_VALUES.get(self.action, 0)
+        super().save(*args, **kwargs)
+
+
+class HighlightComment(models.Model):
+    """A comment on a highlight. Scoring lives in HighlightEngagement — only
+    a user's first comment earns the +2, but every comment is kept."""
+
+    highlight = models.ForeignKey(
+        CommunityHighlight, on_delete=models.CASCADE, related_name="comments"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="highlight_comments"
+    )
+    body = models.TextField(max_length=600)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["highlight", "created_at"], name="store_hc_hl_created_idx")]
+
+    def __str__(self):
+        return f"{self.user.username} on #{self.highlight_id}"
+
+
+class DiscountVoucher(models.Model):
+    """A unique, single-use discount code minted when a highlight hits its
+    goal. Deposited straight into the buyer's wallet."""
+
+    code = models.CharField(max_length=32, unique=True, db_index=True)
+    buyer = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="discount_vouchers"
+    )
+    seller = models.ForeignKey(
+        SellerProfile, on_delete=models.CASCADE, related_name="issued_vouchers",
+        null=True, blank=True
+    )
+    highlight = models.OneToOneField(
+        CommunityHighlight, on_delete=models.CASCADE, related_name="voucher",
+        null=True, blank=True
+    )
+    discount_percent = models.PositiveSmallIntegerField(default=10)
+    is_used = models.BooleanField(default=False)
+    used_at = models.DateTimeField(null=True, blank=True)
+    used_on_order = models.ForeignKey(
+        Order, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="applied_vouchers"
+    )
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Discount Voucher"
+        indexes = [models.Index(fields=["buyer", "is_used"], name="store_dv_buyer_used_idx")]
+
+    def __str__(self):
+        return f"{self.code} ({self.discount_percent}% off)"
+
+    @staticmethod
+    def generate_code():
+        """Codes look like SV-POP-GOLD-8492 — readable and easy to retype."""
+        words = [
+            "GOLD", "KENTE", "VIBE", "WAVE", "STAR", "BOLD", "GLOW",
+            "SHINE", "PEAK", "ROYAL", "SPARK", "FRESH",
+        ]
+        alphabet = string.digits
+        while True:
+            word = secrets.choice(words)
+            tail = "".join(secrets.choice(alphabet) for _ in range(4))
+            code = f"SV-POP-{word}-{tail}"
+            if not DiscountVoucher.objects.filter(code=code).exists():
+                return code
+
+    @property
+    def is_expired(self):
+        return bool(self.expires_at and timezone.now() > self.expires_at)
+
+    @property
+    def is_redeemable(self):
+        return not self.is_used and not self.is_expired
+
+    @property
+    def status_label(self):
+        if self.is_used:
+            return "Used"
+        if self.is_expired:
+            return "Expired"
+        return "Ready to use"
+
+    def discount_for(self, amount):
+        """Cedi value this voucher takes off a given subtotal."""
+        if not self.is_redeemable:
+            return Decimal("0.00")
+        return (Decimal(str(amount)) * Decimal(self.discount_percent) / Decimal(100)).quantize(Decimal("0.01"))
+
+    def mark_used(self, order=None):
+        self.is_used = True
+        self.used_at = timezone.now()
+        self.used_on_order = order
+        self.save(update_fields=["is_used", "used_at", "used_on_order"])

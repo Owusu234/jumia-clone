@@ -137,6 +137,8 @@
                     <ul class="dropdown-menu dropdown-menu-end shadow border-0">
                         <li><a class="dropdown-item" href="{% url 'store:profile' %}"><i class="bi bi-person me-2"></i>Profile</a></li>
                         <li><a class="dropdown-item" href="{% url 'store:user_orders' %}"><i class="bi bi-bag me-2"></i>My Orders</a></li>
+                        <li><a class="dropdown-item" href="{% url 'store:community_highlights' %}"><i class="bi bi-camera me-2"></i>Community Highlights</a></li>
+                        <li><a class="dropdown-item" href="{% url 'store:my_vouchers' %}"><i class="bi bi-wallet2 me-2"></i>My Vouchers</a></li>
                         {% if user.seller_profile %}
                         <li><a class="dropdown-item" href="{% url 'store:seller_dashboard' %}"><i class="bi bi-shop me-2"></i>Seller Dashboard</a></li>
                         <li><a class="dropdown-item" href="{% url 'store:seller_analytics' %}"><i class="bi bi-graph-up me-2"></i>Analytics</a></li>
@@ -182,6 +184,7 @@
 
             <ul class="category-list">
                 <li><a href="{% url 'store:home' %}" class="{% if not request.GET.category %}active{% endif %}"><i class="bi bi-grid"></i> All Products</a></li>
+                <li><a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}"><i class="bi bi-camera"></i> Community Highlights</a></li>
 
                 <li class="divider">Phones & Tech</li>
                 <li><a href="{% url 'store:home' %}?category=smartphones"><i class="bi bi-phone"></i> Smartphones</a></li>
@@ -253,8 +256,8 @@
             <a href="{% url 'store:home' %}" class="{% if request.resolver_match.url_name == 'home' %}active{% endif %}">
                 <i class="bi bi-house{% if request.resolver_match.url_name == 'home' %}-fill{% endif %}"></i>Home
             </a>
-            <a href="#" onclick="toggleSidebar(); return false;">
-                <i class="bi bi-grid"></i>Categories
+            <a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}">
+                <i class="bi bi-camera{% if request.resolver_match.url_name == 'community_highlights' %}-fill{% endif %}"></i>Community
             </a>
             <a href="{% url 'store:wishlist' %}" class="position-relative {% if request.resolver_match.url_name == 'wishlist' %}active{% endif %}">
                 <i class="bi bi-heart{% if request.resolver_match.url_name == 'wishlist' %}-fill{% endif %}"></i>Wishlist

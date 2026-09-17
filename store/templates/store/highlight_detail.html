@@ -1,0 +1,81 @@
+{% extends "store/base.html" %}
+{% block title %}{{ highlight.title|truncatechars:60 }} | Community Highlights{% endblock %}
+
+{% block extra_css %}{% include 'store/_highlight_styles.html' %}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0" style="max-width: 760px;">
+
+    <a href="{% url 'store:community_highlights' %}" class="btn btn-sm btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-left me-1"></i>Back to Community Highlights
+    </a>
+
+    <div class="hl-eyebrow"><i class="bi bi-patch-check"></i> Proof-of-Purchase Highlight</div>
+
+    {% with h=highlight %}
+    {% include 'store/_highlight_card.html' %}
+    {% endwith %}
+
+    <!-- How the scoring works, for anyone arriving from a shared link -->
+    <div class="hl-legend">
+        <p class="small text-muted mb-3">
+            This unboxing is backed by a confirmed <strong>paid &amp; delivered</strong> order.
+            Every interaction scores it — and when it reaches
+            <strong>{{ highlight.points_goal }} points</strong>,
+            {{ highlight.buyer.username }} automatically receives a
+            <strong>{{ highlight.discount_percent }}% discount voucher</strong> from the seller.
+        </p>
+        <div class="row g-3">
+            <div class="col-4">
+                <div class="hl-point-card">
+                    <div class="lbl"><i class="bi bi-heart"></i> Like</div>
+                    <div class="val">+{{ point_values.like }}</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="hl-point-card">
+                    <div class="lbl"><i class="bi bi-chat"></i> Comment</div>
+                    <div class="val">+{{ point_values.comment }}</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="hl-point-card">
+                    <div class="lbl"><i class="bi bi-share"></i> Share</div>
+                    <div class="val">+{{ point_values.share }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Author-only editor -->
+    {% if highlight.buyer == user %}
+    <div class="card border-0 shadow-sm mt-4" style="background: var(--surface);">
+        <div class="card-header bg-transparent fw-bold py-3">
+            <i class="bi bi-pencil-square me-2"></i>Edit your highlight
+        </div>
+        <div class="card-body">
+            <form method="post" action="{% url 'store:edit_highlight' highlight.id %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Title</label>
+                    <input type="text" name="title" class="form-control" maxlength="160"
+                           value="{{ highlight.title }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Your story</label>
+                    <textarea name="body" class="form-control" rows="5" maxlength="2000" required>{{ highlight.body }}</textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Replace photo or clip <span class="text-muted fw-normal">(optional)</span></label>
+                    <input type="file" name="media" class="form-control" accept="image/*,video/mp4,video/webm,video/quicktime">
+                    <div class="form-text">Up to 25 MB.</div>
+                </div>
+                <button class="btn btn-primary fw-bold"><i class="bi bi-check2 me-1"></i>Save changes</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% include 'store/_highlight_scripts.html' %}
+{% endblock %}

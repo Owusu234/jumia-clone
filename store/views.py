@@ -1393,6 +1393,21 @@ def initialize_paystack_payment(req):
         # Validate we have valid items and positive total
         if valid_items == 0 or total <= 0:
             return JsonResponse({'error': 'No valid items in cart'}, status=400)
+
+        # 2b̲⃣ Community Highlights voucher, if the buyer applied one.
+        #    The discount comes off the amount Paystack actually charges, so
+        #    the Order total written on verification is already correct.
+        voucher_code = req.session.get('applied_voucher')
+        voucher_discount = Decimal('0')
+        if voucher_code and req.user.is_authenticated:
+            voucher = DiscountVoucher.objects.filter(
+                code=voucher_code, buyer=req.user, is_used=False
+            ).first()
+            if voucher and voucher.is_redeemable:
+                voucher_discount = voucher.discount_for(total)
+                total = max(Decimal('1.00'), total - voucher_discount)
+            else:
+                req.session.pop('applied_voucher', None)
         
         # 3️⃣ Generate unique reference (timestamp + user ID for uniqueness)
         payer_ref_part = req.user.id if req.user.is_authenticated else 'guest'
@@ -1474,7 +1489,12 @@ def initialize_paystack_payment(req):
                 'success': True,
                 'authorization_url': data['data']['authorization_url'],
                 'reference': reference,
-                'amount_ghs': str(total)
+                'amount_ghs': str(total),
+                # Authoritative amount, already net of any applied voucher.
+                # The checkout popup must use this, not its own page-rendered
+                # figure, or a discounted order would still charge full price.
+                'amount_kobo': int(total * 100),
+                'voucher_discount_ghs': str(voucher_discount),
             })
         else:
             logger.error(f"Paystack init failed: {data}")
@@ -1577,6 +1597,9 @@ def paystack_callback(req):
                 paystack_response=paystack_data,
                 customer_email=paystack_data.get('customer', {}).get('email', getattr(req.user, 'email', '')),
             )
+
+            # Burn the Community Highlights voucher, if one was applied.
+            _consume_applied_voucher(req, order)
 
             total_calculated = Decimal('0')
             items_processed = 0
@@ -1752,6 +1775,9 @@ def verify_paystack_payment(req):
                 paystack_response=paystack_data,
                 guest_email=(customer_email or '') if not req.user.is_authenticated else None,
             )
+
+            # Burn the Community Highlights voucher, if one was applied.
+            _consume_applied_voucher(req, order)
 
             total_calculated = Decimal('0')
             items_processed = 0
@@ -2012,13 +2038,25 @@ def seller_dashboard(req):
     
 
     statuses = ["Pending", "Processing", "Shipped", "In Transit", "Out for Delivery", "Delivered", "Cancelled"]
-    
+
+    # Community Highlights: the seller's engagement goal + how it's performing.
+    from .models import SellerHighlightGoal, CommunityHighlight, DiscountVoucher
+    highlight_goal = SellerHighlightGoal.for_seller(s)
+    seller_highlights = CommunityHighlight.objects.filter(seller=s)
+    highlight_stats = {
+        "posts": seller_highlights.count(),
+        "points": seller_highlights.aggregate(t=Sum("total_points"))["t"] or 0,
+        "vouchers": DiscountVoucher.objects.filter(seller=s).count(),
+    }
+
     return render(req, "store/seller_dashboard.html", {
         "profile": s,
         "products": prods,
         "orders": orders,
         "stats": stats,
-        "statuses": statuses  
+        "statuses": statuses,
+        "highlight_goal": highlight_goal,
+        "highlight_stats": highlight_stats,
     })
 
 # store/views.py
@@ -3203,3 +3241,546 @@ def seller_application_detail(request, seller_id):
         return redirect('store:admin_dashboard')
     
     return render(request, 'store/seller_application_detail.html', {'seller': seller})
+
+# ============================================================================
+# COMMUNITY HIGHLIGHTS — proof-of-purchase feed & automated engagement rewards
+# ============================================================================
+#
+# Buyers with a paid + delivered order post an unboxing highlight. Shoppers
+# engage, and every interaction scores the post:
+#
+#       Like +1        Comment +2        Share +3
+#
+# Each seller sets a points goal (default 15) and a discount percentage. The
+# moment a highlight crosses the goal, a unique voucher is minted and dropped
+# into the buyer's wallet, and both sides get a notification.
+# ----------------------------------------------------------------------------
+
+from .models import (
+    CommunityHighlight, HighlightEngagement, HighlightComment,
+    DiscountVoucher, SellerHighlightGoal,
+)
+
+HIGHLIGHT_MEDIA_BUCKET = "review"
+HIGHLIGHT_MAX_UPLOAD = 25 * 1024 * 1024  # 25 MB
+HIGHLIGHT_VIDEO_TYPES = {"video/mp4", "video/webm", "video/quicktime"}
+
+
+def _highlight_feed_queryset():
+    return (
+        CommunityHighlight.objects
+        .filter(is_active=True, is_approved=True)
+        .select_related("buyer", "buyer__user_profile", "product", "seller",
+                        "seller__user", "order", "voucher")
+        .prefetch_related("comments__user")
+    )
+
+
+def _upload_highlight_media(user, upload):
+    """Push the buyer's unboxing photo/clip to Supabase Storage.
+
+    Photos are re-encoded to a sane feed width; videos are stored as-is.
+    Returns (public_url, storage_path, media_type) or raises."""
+    content_type = (getattr(upload, "content_type", "") or "").lower()
+    is_video = content_type in HIGHLIGHT_VIDEO_TYPES
+
+    supabase = get_supabase_client()
+
+    if is_video:
+        payload = upload.read()
+        extension = "mp4" if "mp4" in content_type else content_type.split("/")[-1]
+        storage_path = f"highlights/{user.id}/hl_{uuid.uuid4().hex}.{extension}"
+        upload_content_type = content_type
+        media_type = CommunityHighlight.MEDIA_VIDEO
+    else:
+        from PIL import Image
+        from io import BytesIO
+
+        src = Image.open(upload).convert("RGB")
+        max_width = 1200
+        if src.width > max_width:
+            ratio = max_width / src.width
+            src = src.resize((max_width, int(src.height * ratio)), Image.Resampling.LANCZOS)
+        buffer = BytesIO()
+        src.save(buffer, format="JPEG", quality=86, optimize=True)
+        payload = buffer.getvalue()
+        storage_path = f"highlights/{user.id}/hl_{uuid.uuid4().hex}.jpg"
+        upload_content_type = "image/jpeg"
+        media_type = CommunityHighlight.MEDIA_IMAGE
+
+    supabase.storage.from_(HIGHLIGHT_MEDIA_BUCKET).upload(
+        storage_path,
+        payload,
+        {
+            "content-type": upload_content_type,
+            "cache-control": "31536000",
+            "upsert": "true",
+        },
+    )
+    public_url = supabase.storage.from_(HIGHLIGHT_MEDIA_BUCKET).get_public_url(storage_path)
+    return str(public_url), storage_path, media_type
+
+
+def _notify_reward_unlocked(highlight, voucher):
+    """Tell the buyer their voucher landed, and let the seller know too."""
+    UserNotification.objects.create(
+        user=highlight.buyer,
+        title="🎁 Reward unlocked!",
+        message=(
+            f"Your highlight reached {highlight.total_points} points. "
+            f"Voucher {voucher.code} ({voucher.discount_percent}% off) is in your wallet."
+        ),
+        link=reverse("store:my_vouchers"),
+    )
+    if highlight.seller and highlight.seller.user:
+        UserNotification.objects.create(
+            user=highlight.seller.user,
+            title="🔥 A highlight hit your goal",
+            message=(
+                f"{highlight.buyer.username}'s unboxing of {highlight.product.name} "
+                f"reached {highlight.points_goal} points. "
+                f"A {voucher.discount_percent}% voucher was issued."
+            ),
+            link=reverse("store:highlight_detail", args=[highlight.id]),
+        )
+
+
+def _award_points(highlight, user, action):
+    """Score an interaction, respecting the anti-gaming rules.
+
+    Returns (awarded: bool, voucher_or_None). Authors never score their own
+    posts, and each user can only score a given action once per highlight."""
+    if not user.is_authenticated or user == highlight.buyer:
+        return False, None
+
+    _, created = HighlightEngagement.objects.get_or_create(
+        highlight=highlight,
+        user=user,
+        action=action,
+        defaults={"points": HighlightEngagement.POINT_VALUES.get(action, 0)},
+    )
+    if not created:
+        return False, None
+
+    highlight.recalculate()
+    voucher = highlight.maybe_unlock_reward()
+    if voucher:
+        _notify_reward_unlocked(highlight, voucher)
+    return True, voucher
+
+
+def _highlight_payload(highlight, user=None):
+    """Consistent JSON the feed's JS uses to repaint a card after an action."""
+    liked = False
+    if user and user.is_authenticated:
+        liked = HighlightEngagement.objects.filter(
+            highlight=highlight, user=user, action=HighlightEngagement.LIKE
+        ).exists()
+    voucher = getattr(highlight, "voucher", None)
+    return {
+        "id": highlight.id,
+        "points": highlight.total_points,
+        "goal": highlight.points_goal,
+        "progress": highlight.progress_percent,
+        "remaining": highlight.points_remaining,
+        "likes": highlight.like_count,
+        "comments": highlight.comment_count,
+        "shares": highlight.share_count,
+        "liked": liked,
+        "unlocked": highlight.reward_unlocked,
+        "voucher_code": voucher.code if voucher else "",
+        "discount_percent": highlight.discount_percent,
+    }
+
+
+# ──────────────────────────── FEED ────────────────────────────
+
+def community_highlights(req):
+    """The public Community Highlights feed."""
+    tab = req.GET.get("tab", "all")
+    highlights = _highlight_feed_queryset()
+
+    if tab == "engaged":
+        highlights = highlights.order_by("-total_points", "-created_at")
+    elif tab == "unlocked":
+        highlights = highlights.filter(reward_unlocked=True)
+    elif tab == "mine" and req.user.is_authenticated:
+        highlights = highlights.filter(buyer=req.user)
+    else:
+        tab = "all"
+
+    paginator = Paginator(highlights, 8)
+    page = paginator.get_page(req.GET.get("page"))
+
+    # Which of these has the viewer already liked? One query, not N.
+    liked_ids = set()
+    if req.user.is_authenticated:
+        liked_ids = set(
+            HighlightEngagement.objects
+            .filter(user=req.user, action=HighlightEngagement.LIKE,
+                    highlight__in=[h.id for h in page])
+            .values_list("highlight_id", flat=True)
+        )
+
+    eligible_items, my_vouchers = [], []
+    if req.user.is_authenticated:
+        eligible_items = list(CommunityHighlight.eligible_order_items(req.user)[:40])
+        my_vouchers = list(
+            DiscountVoucher.objects.filter(buyer=req.user, is_used=False)
+            .select_related("seller")[:5]
+        )
+
+    return render(req, "store/community_highlights.html", {
+        "highlights": page,
+        "page_obj": page,
+        "tab": tab,
+        "liked_ids": liked_ids,
+        "eligible_items": eligible_items,
+        "my_vouchers": my_vouchers,
+        "total_count": _highlight_feed_queryset().count(),
+        "point_values": HighlightEngagement.POINT_VALUES,
+    })
+
+
+def highlight_detail(req, highlight_id):
+    """Single highlight — this is what a shared link opens."""
+    highlight = get_object_or_404(_highlight_feed_queryset(), id=highlight_id)
+
+    # The card partial is shared with the feed, so hand it the same shape.
+    liked_ids = set()
+    if req.user.is_authenticated and HighlightEngagement.objects.filter(
+        highlight=highlight, user=req.user, action=HighlightEngagement.LIKE
+    ).exists():
+        liked_ids = {highlight.id}
+
+    return render(req, "store/highlight_detail.html", {
+        "highlight": highlight,
+        "liked_ids": liked_ids,
+        "point_values": HighlightEngagement.POINT_VALUES,
+    })
+
+
+# ──────────────────────── POSTING & EDITING ────────────────────────
+
+@login_required
+@require_POST
+def create_highlight(req):
+    """Post an unboxing highlight. Only ever possible against a real,
+    paid-and-delivered order item belonging to the poster."""
+    order_item_id = req.POST.get("order_item")
+    title = (req.POST.get("title") or "").strip()
+    body = (req.POST.get("body") or "").strip()
+    media = req.FILES.get("media")
+
+    if not (order_item_id and title and body):
+        messages.error(req, "Pick the item you're reviewing and add a title and story.")
+        return redirect("store:community_highlights")
+
+    order_item = (
+        CommunityHighlight.eligible_order_items(req.user)
+        .filter(id=order_item_id).first()
+    )
+    if not order_item:
+        messages.error(
+            req,
+            "That item isn't eligible. Highlights are only for paid orders "
+            "that have been delivered, and each item can be featured once."
+        )
+        return redirect("store:community_highlights")
+
+    if media and media.size > HIGHLIGHT_MAX_UPLOAD:
+        messages.error(req, "Photos and clips must be 25 MB or smaller.")
+        return redirect("store:community_highlights")
+
+    seller = order_item.product.seller
+    goal = SellerHighlightGoal.for_seller(seller)
+
+    media_url, storage_path, media_type = "", "", CommunityHighlight.MEDIA_IMAGE
+    if media:
+        try:
+            media_url, storage_path, media_type = _upload_highlight_media(req.user, media)
+        except Exception as exc:
+            logging.exception("Highlight media upload failed: %s", exc)
+            messages.error(req, "We couldn't process that file. Try another photo or clip.")
+            return redirect("store:community_highlights")
+
+    try:
+        highlight = CommunityHighlight.objects.create(
+            buyer=req.user,
+            order=order_item.order,
+            order_item=order_item,
+            product=order_item.product,
+            seller=seller,
+            title=title[:160],
+            body=body[:2000],
+            media_url=media_url,
+            media_type=media_type,
+            media_storage_path=storage_path,
+            points_goal=goal.points_goal if goal else 15,
+            discount_percent=goal.discount_percent if goal else 10,
+        )
+    except IntegrityError:
+        messages.error(req, "You've already posted a highlight for that item.")
+        return redirect("store:community_highlights")
+
+    if seller and seller.user:
+        UserNotification.objects.create(
+            user=seller.user,
+            title="📸 New unboxing highlight",
+            message=f"{req.user.username} posted an unboxing of {highlight.product.name}.",
+            link=reverse("store:highlight_detail", args=[highlight.id]),
+        )
+
+    messages.success(
+        req,
+        f"✅ Highlight posted! Reach {highlight.points_goal} points to unlock "
+        f"{highlight.discount_percent}% off from this seller."
+    )
+    return redirect("store:highlight_detail", highlight_id=highlight.id)
+
+
+@login_required
+@require_POST
+def edit_highlight(req, highlight_id):
+    """Authors can fix up their own words and swap the media."""
+    highlight = get_object_or_404(CommunityHighlight, id=highlight_id, buyer=req.user)
+    title = (req.POST.get("title") or "").strip()
+    body = (req.POST.get("body") or "").strip()
+    if not (title and body):
+        messages.error(req, "A highlight needs both a title and a story.")
+        return redirect("store:highlight_detail", highlight_id=highlight.id)
+
+    highlight.title = title[:160]
+    highlight.body = body[:2000]
+
+    media = req.FILES.get("media")
+    if media:
+        if media.size > HIGHLIGHT_MAX_UPLOAD:
+            messages.error(req, "Photos and clips must be 25 MB or smaller.")
+            return redirect("store:highlight_detail", highlight_id=highlight.id)
+        try:
+            highlight.media_url, highlight.media_storage_path, highlight.media_type = \
+                _upload_highlight_media(req.user, media)
+        except Exception as exc:
+            logging.exception("Highlight media replace failed: %s", exc)
+            messages.error(req, "We couldn't process that file.")
+            return redirect("store:highlight_detail", highlight_id=highlight.id)
+
+    highlight.save(update_fields=[
+        "title", "body", "media_url", "media_storage_path", "media_type", "updated_at"
+    ])
+    messages.success(req, "✅ Highlight updated.")
+    return redirect("store:highlight_detail", highlight_id=highlight.id)
+
+
+@login_required
+@require_POST
+def delete_highlight(req, highlight_id):
+    """Authors (and staff) can pull a highlight down. Any voucher already
+    unlocked stays valid — the buyer earned it."""
+    highlight = get_object_or_404(CommunityHighlight, id=highlight_id)
+    if highlight.buyer != req.user and not req.user.is_staff:
+        messages.error(req, "You can only delete your own highlights.")
+        return redirect("store:community_highlights")
+
+    DiscountVoucher.objects.filter(highlight=highlight).update(highlight=None)
+    if highlight.media_storage_path:
+        try:
+            get_supabase_client().storage.from_(HIGHLIGHT_MEDIA_BUCKET).remove(
+                [highlight.media_storage_path]
+            )
+        except Exception:
+            pass
+    highlight.delete()
+    messages.success(req, "Highlight deleted.")
+    return redirect("store:community_highlights")
+
+
+# ──────────────────────── ENGAGEMENT (AJAX) ────────────────────────
+
+@login_required
+@require_POST
+def toggle_highlight_like(req, highlight_id):
+    """+1 point on the first like. Un-liking takes the point back."""
+    highlight = get_object_or_404(CommunityHighlight, id=highlight_id, is_active=True)
+
+    if req.user == highlight.buyer:
+        return JsonResponse(
+            {"ok": False, "error": "Your own highlight can't earn points from you."},
+            status=400,
+        )
+
+    existing = HighlightEngagement.objects.filter(
+        highlight=highlight, user=req.user, action=HighlightEngagement.LIKE
+    ).first()
+
+    if existing:
+        existing.delete()
+        highlight.recalculate()
+        payload = _highlight_payload(highlight, req.user)
+        payload.update(ok=True, awarded=0)
+        return JsonResponse(payload)
+
+    _, voucher = _award_points(highlight, req.user, HighlightEngagement.LIKE)
+    payload = _highlight_payload(highlight, req.user)
+    payload.update(
+        ok=True,
+        awarded=HighlightEngagement.POINT_VALUES[HighlightEngagement.LIKE],
+        just_unlocked=bool(voucher),
+    )
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def add_highlight_comment(req, highlight_id):
+    """+2 points, but only for a user's first comment on the highlight."""
+    highlight = get_object_or_404(CommunityHighlight, id=highlight_id, is_active=True)
+    body = (req.POST.get("body") or "").strip()
+    if not body:
+        return JsonResponse({"ok": False, "error": "Write something first."}, status=400)
+
+    comment = HighlightComment.objects.create(
+        highlight=highlight, user=req.user, body=body[:600]
+    )
+    awarded, voucher = _award_points(highlight, req.user, HighlightEngagement.COMMENT)
+    highlight.recalculate()
+
+    payload = _highlight_payload(highlight, req.user)
+    payload.update(
+        ok=True,
+        awarded=HighlightEngagement.POINT_VALUES[HighlightEngagement.COMMENT] if awarded else 0,
+        just_unlocked=bool(voucher),
+        comment={
+            "user": req.user.username,
+            "avatar": req.user.user_profile.get_avatar_url(),
+            "body": comment.body,
+            "when": "just now",
+        },
+    )
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def share_highlight(req, highlight_id):
+    """+3 points for a user's first share. Returns the link to copy."""
+    highlight = get_object_or_404(CommunityHighlight, id=highlight_id, is_active=True)
+    awarded, voucher = _award_points(highlight, req.user, HighlightEngagement.SHARE)
+
+    payload = _highlight_payload(highlight, req.user)
+    payload.update(
+        ok=True,
+        awarded=HighlightEngagement.POINT_VALUES[HighlightEngagement.SHARE] if awarded else 0,
+        just_unlocked=bool(voucher),
+        share_url=req.build_absolute_uri(
+            reverse("store:highlight_detail", args=[highlight.id])
+        ),
+    )
+    return JsonResponse(payload)
+
+
+# ──────────────────────── SELLER GOAL & VOUCHERS ────────────────────────
+
+@login_required
+@require_POST
+def set_highlight_goal(req):
+    """Seller sets the points target and the discount it unlocks."""
+    seller = get_object_or_404(SellerProfile, user=req.user)
+    goal = SellerHighlightGoal.for_seller(seller)
+
+    try:
+        points_goal = int(req.POST.get("points_goal", goal.points_goal))
+        discount_percent = int(req.POST.get("discount_percent", goal.discount_percent))
+        validity = int(req.POST.get("voucher_validity_days", goal.voucher_validity_days))
+    except (TypeError, ValueError):
+        messages.error(req, "Please enter whole numbers for the goal and discount.")
+        return redirect("store:seller_dashboard")
+
+    if not 1 <= points_goal <= 10000:
+        messages.error(req, "The points goal must be between 1 and 10,000.")
+        return redirect("store:seller_dashboard")
+    if not 1 <= discount_percent <= 90:
+        messages.error(req, "The discount must be between 1% and 90%.")
+        return redirect("store:seller_dashboard")
+    if not 1 <= validity <= 365:
+        messages.error(req, "Voucher validity must be between 1 and 365 days.")
+        return redirect("store:seller_dashboard")
+
+    goal.points_goal = points_goal
+    goal.discount_percent = discount_percent
+    goal.voucher_validity_days = validity
+    goal.is_active = req.POST.get("is_active") == "on"
+    goal.save()
+
+    messages.success(
+        req,
+        f"✅ Goal saved: {points_goal} points unlocks {discount_percent}% off "
+        f"for the buyer, valid {validity} days."
+    )
+    return redirect("store:seller_dashboard")
+
+
+@login_required
+def my_vouchers(req):
+    """The buyer's voucher wallet."""
+    vouchers = (
+        DiscountVoucher.objects
+        .filter(buyer=req.user)
+        .select_related("seller", "highlight", "highlight__product")
+    )
+    return render(req, "store/my_vouchers.html", {
+        "vouchers": vouchers,
+        "active_count": sum(1 for v in vouchers if v.is_redeemable),
+    })
+
+
+@login_required
+@require_POST
+def validate_voucher(req):
+    """Check a code and return the cedi discount for a given subtotal.
+
+    Used by the checkout page; also safe to call from anywhere else."""
+    code = (req.POST.get("code") or "").strip().upper()
+    try:
+        subtotal = Decimal(str(req.POST.get("subtotal") or "0"))
+    except Exception:
+        subtotal = Decimal("0")
+
+    voucher = DiscountVoucher.objects.filter(code=code, buyer=req.user).first()
+    if not voucher:
+        return JsonResponse({"ok": False, "error": "That code isn't in your wallet."}, status=404)
+    if voucher.is_used:
+        return JsonResponse({"ok": False, "error": "This voucher has already been used."}, status=400)
+    if voucher.is_expired:
+        return JsonResponse({"ok": False, "error": "This voucher has expired."}, status=400)
+
+    discount = voucher.discount_for(subtotal)
+    req.session["applied_voucher"] = voucher.code
+    req.session.modified = True
+    return JsonResponse({
+        "ok": True,
+        "code": voucher.code,
+        "discount_percent": voucher.discount_percent,
+        "discount_amount": str(discount),
+        "new_total": str((subtotal - discount).quantize(Decimal("0.01"))),
+        "seller": voucher.seller.store_name if voucher.seller else "",
+    })
+
+def _consume_applied_voucher(req, order):
+    """Burn the Community Highlights voucher the buyer applied at checkout.
+
+    Called once the order exists. Silent on failure: a payment must never be
+    lost over voucher bookkeeping."""
+    code = req.session.pop('applied_voucher', None)
+    if not code:
+        return
+    req.session.modified = True
+    try:
+        voucher = DiscountVoucher.objects.filter(
+            code=code, buyer=order.user, is_used=False
+        ).first()
+        if voucher:
+            voucher.mark_used(order)
+    except Exception as exc:
+        logging.exception('Voucher redemption bookkeeping failed: %s', exc)

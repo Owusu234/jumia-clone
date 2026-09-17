@@ -196,6 +196,23 @@
     </div>
     {% endif %}
 
+    <!-- 🏆 Community Highlights teaser -->
+    <div class="seller-cta-banner" style="border-left-color: var(--success);">
+        <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
+            <div>
+                <h5 class="fw-bold mb-1">🏆 Community Highlights</h5>
+                <p class="mb-0 small text-muted">
+                    Real unboxings from delivered orders. Like <strong>+1</strong>,
+                    comment <strong>+2</strong>, share <strong>+3</strong> — hit the
+                    seller's goal and the buyer unlocks a discount voucher.
+                </p>
+            </div>
+            <a href="{% url 'store:community_highlights' %}" class="btn btn-success fw-bold px-4 py-2 text-nowrap">
+                Explore Highlights
+            </a>
+        </div>
+    </div>
+
     <!-- 🔍 Search Bar -->
     <div class="hero-search">
         <form method="get" class="row g-2 align-items-center">

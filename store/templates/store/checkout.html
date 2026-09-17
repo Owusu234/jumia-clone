@@ -142,10 +142,32 @@
                     <span class="text-muted">Shipping</span>
                     <span class="text-success">Free</span>
                 </div>
+
+                <!-- Community Highlights voucher -->
+                {% if user.is_authenticated %}
+                <div class="d-flex justify-content-between mb-2" id="voucherRow" style="display:none !important;">
+                    <span class="text-muted">
+                        Voucher <code class="small" id="voucherCodeLabel"></code>
+                    </span>
+                    <span class="text-success">− GH₵<span id="voucherAmount">0.00</span></span>
+                </div>
+                <div class="mb-2">
+                    <div class="input-group input-group-sm">
+                        <input type="text" id="voucherInput" class="form-control"
+                               placeholder="Voucher code (e.g. SV-POP-GOLD-8492)"
+                               style="text-transform: uppercase;">
+                        <button class="btn btn-outline-primary" type="button" id="voucherApplyBtn">Apply</button>
+                    </div>
+                    <div class="form-text" id="voucherMsg">
+                        Unlocked a reward? <a href="{% url 'store:my_vouchers' %}">Open your wallet</a>.
+                    </div>
+                </div>
+                {% endif %}
+
                 <hr class="border-theme">
                 <div class="d-flex justify-content-between mb-3">
                     <span class="fw-bold fs-5">Total</span>
-                    <span class="fw-bold fs-5 text-primary">GH₵{{ total|floatformat:2 }}</span>
+                    <span class="fw-bold fs-5 text-primary">GH₵<span id="grandTotal">{{ total|floatformat:2 }}</span></span>
                 </div>
 
                 {% if not user.is_authenticated %}
@@ -319,7 +341,9 @@
             const handler = PaystackPop.setup({
                 key: PK,
                 email: payerEmail,
-                amount: AMOUNT,
+                // Server-side amount wins: it is net of any Community
+                // Highlights voucher the buyer applied.
+                amount: data.amount_kobo || AMOUNT,
                 currency: "GHS",
                 ref: data.reference,
                 callback: function(response) {
@@ -386,4 +410,69 @@
     });
 })();
 </script>
+
+<script>
+/* ── Community Highlights voucher redemption ──────────────────────────────
+   Validates the code server-side and previews the discount. The real
+   discount is applied again at payment initialisation, so a tampered
+   page can never change what the buyer is actually charged. */
+(function () {
+    const applyBtn = document.getElementById('voucherApplyBtn');
+    if (!applyBtn) { return; }
+
+    const input     = document.getElementById('voucherInput');
+    const msg       = document.getElementById('voucherMsg');
+    const row       = document.getElementById('voucherRow');
+    const codeLabel = document.getElementById('voucherCodeLabel');
+    const amountEl  = document.getElementById('voucherAmount');
+    const totalEl   = document.getElementById('grandTotal');
+    const SUBTOTAL  = "{{ total }}";
+    const CSRF      = "{{ csrf_token }}";
+
+    applyBtn.addEventListener('click', async function () {
+        const code = (input.value || '').trim().toUpperCase();
+        if (!code) { return; }
+
+        applyBtn.disabled = true;
+        const body = new FormData();
+        body.append('code', code);
+        body.append('subtotal', SUBTOTAL);
+
+        try {
+            const res = await fetch("{% url 'store:validate_voucher' %}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+                body: body
+            });
+            const d = await res.json();
+
+            if (!d.ok) {
+                msg.className = 'form-text text-danger';
+                msg.textContent = d.error || 'That code could not be applied.';
+                row.style.setProperty('display', 'none', 'important');
+                totalEl.textContent = parseFloat(SUBTOTAL).toFixed(2);
+                return;
+            }
+
+            codeLabel.textContent = d.code;
+            amountEl.textContent  = parseFloat(d.discount_amount).toFixed(2);
+            totalEl.textContent   = parseFloat(d.new_total).toFixed(2);
+            row.style.setProperty('display', 'flex', 'important');
+            msg.className = 'form-text text-success';
+            msg.textContent = d.discount_percent + '% off applied'
+                + (d.seller ? ' at ' + d.seller : '') + '.';
+        } catch (err) {
+            msg.className = 'form-text text-danger';
+            msg.textContent = 'Could not reach the server. Try again.';
+        } finally {
+            applyBtn.disabled = false;
+        }
+    });
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); applyBtn.click(); }
+    });
+})();
+</script>
+
 {% endblock %}

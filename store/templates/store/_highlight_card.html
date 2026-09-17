@@ -1,0 +1,123 @@
+    <article class="hl-card" id="hl-{{ h.id }}"
+             data-id="{{ h.id }}"
+             data-like-url="{% url 'store:toggle_highlight_like' h.id %}"
+             data-comment-url="{% url 'store:add_highlight_comment' h.id %}"
+             data-share-url="{% url 'store:share_highlight' h.id %}">
+
+        <div class="hl-card-head">
+            <img src="{{ h.buyer.user_profile.get_avatar_url }}" class="hl-avatar" alt="{{ h.buyer.username }}"
+                 onerror="this.src='https://via.placeholder.com/80?text=%F0%9F%91%A4'">
+            <div class="me-auto">
+                <div class="hl-author">{{ h.buyer.get_full_name|default:h.buyer.username }}</div>
+                <div class="hl-handle">&#64;{{ h.buyer.username }}</div>
+            </div>
+            <span class="hl-verified"><i class="bi bi-patch-check-fill"></i> Verified</span>
+            {% if h.buyer == user %}
+            <a href="{% url 'store:highlight_detail' h.id %}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-pencil"></i> Edit
+            </a>
+            <form method="post" action="{% url 'store:delete_highlight' h.id %}" class="d-inline"
+                  onsubmit="return confirm('Delete this highlight? Any voucher you already unlocked stays valid.');">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</button>
+            </form>
+            {% endif %}
+        </div>
+
+        <a href="{% url 'store:product_detail' h.product.slug %}" class="hl-product">
+            <img src="{{ h.product.get_image }}" alt="{{ h.product.name }}">
+            <div class="me-auto">
+                <div class="nm">{{ h.product.name|truncatechars:52 }}</div>
+                <div class="meta">
+                    Seller: &#64;{{ h.seller.store_name|default:"ShopVibe" }} &middot; Order #{{ h.order.reference|truncatechars:16 }}
+                </div>
+            </div>
+            <i class="bi bi-chevron-right text-muted"></i>
+        </a>
+
+        {% if h.media_url %}
+            {% if h.is_video %}
+            <video class="hl-media" controls preload="metadata" playsinline src="{{ h.media_url }}"></video>
+            {% else %}
+            <img class="hl-media" src="{{ h.media_url }}" alt="{{ h.title }}" loading="lazy">
+            {% endif %}
+        {% endif %}
+
+        <div class="hl-body">
+            <h5>{{ h.title }}</h5>
+            <p>{{ h.body|truncatechars:260|linebreaksbr }}</p>
+        </div>
+
+        <!-- Progress to the seller's goal -->
+        <div class="hl-progress-box">
+            <div class="hl-progress-top">
+                <span class="pts">🔥 Engagement: <span data-points>{{ h.total_points }}</span> pts</span>
+                <span class="goal">Goal: {{ h.points_goal }} pts</span>
+            </div>
+            <div class="hl-bar"><span data-bar style="width: {{ h.progress_percent }}%"></span></div>
+            <div class="hl-voucher {% if h.reward_unlocked %}show{% endif %}" data-voucher-box>
+                <span>
+                    <i class="bi bi-gift me-1"></i>
+                    <code data-voucher-code>{% if h.voucher %}{{ h.voucher.code }}{% endif %}</code>
+                    <span class="small">({{ h.discount_percent }}% OFF)</span>
+                </span>
+                {% if h.buyer == user and h.voucher %}
+                <button class="btn btn-sm btn-outline-warning" onclick="hlCopy('{{ h.voucher.code }}', this)">
+                    <i class="bi bi-clipboard"></i> Copy
+                </button>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Like / Comment / Share -->
+        <div class="hl-actions">
+            <button class="hl-act {% if h.id in liked_ids %}liked{% endif %}"
+                    data-like
+                    {% if h.buyer == user %}disabled title="Your own highlight can't earn points from you"{% endif %}>
+                <i class="bi bi-heart{% if h.id in liked_ids %}-fill{% endif %}"></i>
+                <span data-likes>{{ h.like_count }}</span>
+                <span class="pt">+{{ point_values.like }}</span>
+            </button>
+
+            <button class="hl-act" data-toggle-comments>
+                <i class="bi bi-chat"></i>
+                <span data-comments>{{ h.comment_count }}</span>
+                <span class="pt">+{{ point_values.comment }}</span>
+            </button>
+
+            <button class="hl-act" data-share
+                    {% if h.buyer == user %}title="Sharing your own post doesn't score"{% endif %}>
+                <i class="bi bi-share"></i>
+                <span data-shares>{{ h.share_count }}</span>
+                <span class="pt">+{{ point_values.share }}</span>
+            </button>
+        </div>
+
+        <!-- Comment thread -->
+        <div class="hl-comments" data-comment-panel>
+            <div data-comment-list>
+                {% for c in h.comments.all %}
+                {% if c.is_active %}
+                <div class="hl-comment">
+                    <img src="{{ c.user.user_profile.get_avatar_url }}" alt="{{ c.user.username }}"
+                         onerror="this.src='https://via.placeholder.com/60?text=%F0%9F%91%A4'">
+                    <div>
+                        <div class="who">&#64;{{ c.user.username }} <span class="text-muted fw-normal small">{{ c.created_at|timesince }} ago</span></div>
+                        <p class="txt">{{ c.body }}</p>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+
+            {% if user.is_authenticated %}
+            <div class="input-group input-group-sm mt-2">
+                <input type="text" class="form-control" placeholder="Add a comment…" data-comment-input maxlength="600">
+                <button class="btn btn-primary" data-comment-send><i class="bi bi-send"></i></button>
+            </div>
+            <div class="form-text">Your first comment here scores the post +{{ point_values.comment }}.</div>
+            {% else %}
+            <a href="{% url 'store:login' %}" class="btn btn-sm btn-outline-primary mt-2">Log in to comment</a>
+            {% endif %}
+        </div>
+    </article>
