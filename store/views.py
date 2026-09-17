@@ -4152,41 +4152,33 @@ def chat_send(req, conversation_id):
 @login_required
 @require_POST
 def chat_share_location(req, conversation_id):
-    """Buyer shares their current coordinates with this seller only."""
+    """Buyer manually enters a region and town for delivery."""
     conv = _get_conversation_or_404(req.user, conversation_id)
     if conv.buyer_id != req.user.id:
-        return JsonResponse({'success': False, 'error': 'Only the buyer shares a location.'}, status=403)
+        return JsonResponse({'success': False, 'error': 'Only the buyer can provide the delivery location.'}, status=403)
 
-    try:
-        lat = Decimal(str(req.POST.get('latitude')))
-        lng = Decimal(str(req.POST.get('longitude')))
-    except (TypeError, ValueError, ArithmeticError):
-        return JsonResponse({'success': False, 'error': 'Could not read that location.'}, status=400)
-    if not (Decimal('-90') <= lat <= Decimal('90')) or not (Decimal('-180') <= lng <= Decimal('180')):
-        return JsonResponse({'success': False, 'error': 'Those coordinates are not valid.'}, status=400)
+    region = (req.POST.get('region') or '').strip()[:100]
+    town = (req.POST.get('town') or '').strip()[:100]
+    if not region or not town:
+        return JsonResponse({
+            'success': False,
+            'error': 'Enter both your region and town.'
+        }, status=400)
 
-    try:
-        accuracy = float(req.POST.get('accuracy') or 0) or None
-    except (TypeError, ValueError):
-        accuracy = None
-
-    conv.buyer_latitude = lat.quantize(Decimal('0.000001'))
-    conv.buyer_longitude = lng.quantize(Decimal('0.000001'))
-    conv.buyer_location_accuracy = accuracy
-    conv.buyer_location_label = (req.POST.get('label') or '').strip()[:255]
+    conv.buyer_region = region
+    conv.buyer_town = town
     conv.location_shared_at = timezone.now()
-    conv.save(update_fields=['buyer_latitude', 'buyer_longitude', 'buyer_location_accuracy',
-                             'buyer_location_label', 'location_shared_at', 'updated_at'])
+    conv.save(update_fields=['buyer_region', 'buyer_town', 'location_shared_at', 'updated_at'])
 
-    label = conv.buyer_location_label or f'{conv.buyer_latitude}, {conv.buyer_longitude}'
+    label = conv.location_label
     msg = ChatMessage.objects.create(
         conversation=conv, sender=req.user, kind=ChatMessage.LOCATION,
-        body=f'Shared their delivery location: {label}')
-    _notify(conv.seller.user_id, '📍 Buyer shared a location',
-            f'{req.user.username} shared their location for {conv.product.name}.',
+        body=f'Shared delivery location: {label}')
+    _notify(conv.seller.user_id, 'Buyer shared a delivery location',
+            f'{req.user.username} shared {label} for {conv.product.name}.',
             reverse('store:chat_thread', args=[conv.id]))
 
-    return JsonResponse({'success': True, 'map_url': conv.location_map_url,
+    return JsonResponse({'success': True, 'location': label,
                          'message': _chat_message_payload(msg, req.user)})
 
 

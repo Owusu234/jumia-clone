@@ -989,12 +989,15 @@ class Conversation(models.Model):
     buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="buyer_conversations")
     seller = models.ForeignKey(SellerProfile, on_delete=models.CASCADE, related_name="conversations")
 
-    # Buyer location, captured from the browser when the chat is opened.
-    buyer_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    buyer_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    buyer_location_label = models.CharField(max_length=255, blank=True, default='')
-    buyer_location_accuracy = models.FloatField(null=True, blank=True,
-        help_text="Accuracy radius in metres reported by the browser")
+    # Buyer-entered delivery area. No browser GPS or coordinates are stored.
+    buyer_region = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text="Region/state/province entered by the buyer"
+    )
+    buyer_town = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text="Town/city entered by the buyer"
+    )
     location_shared_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1009,13 +1012,13 @@ class Conversation(models.Model):
 
     @property
     def has_location(self):
-        return self.buyer_latitude is not None and self.buyer_longitude is not None
+        return bool(self.buyer_region.strip() and self.buyer_town.strip())
 
     @property
-    def location_map_url(self):
+    def location_label(self):
         if not self.has_location:
             return ''
-        return f"https://www.google.com/maps?q={self.buyer_latitude},{self.buyer_longitude}"
+        return f"{self.buyer_region}, {self.buyer_town}"
 
     def is_participant(self, user):
         return bool(user and user.is_authenticated and
