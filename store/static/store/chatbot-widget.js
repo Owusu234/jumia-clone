@@ -73,6 +73,25 @@
     const panelHeight = Math.min(460, window.innerHeight * 0.75);
     const gap = 14;
 
+    // On phones, keep the assistant and its panel in the upper-right so the
+    // bottom cart/tab navigation remains completely unobstructed.
+    if (window.innerWidth <= 767) {
+      const top = Math.min(
+        window.innerHeight - panelHeight - EDGE_GAP,
+        Math.max(82 + (window.visualViewport?.offsetTop || 0), bRect.bottom + gap)
+      );
+      const left = clamp(
+        bRect.right - panelWidth,
+        EDGE_GAP,
+        Math.max(EDGE_GAP, window.innerWidth - panelWidth - EDGE_GAP)
+      );
+      panel.style.left = left + "px";
+      panel.style.top = top + "px";
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+      return;
+    }
+
     let top = bRect.top - gap - panelHeight;
     if (top < EDGE_GAP) top = Math.min(bRect.bottom + gap, window.innerHeight - panelHeight - EDGE_GAP);
     top = clamp(top, EDGE_GAP, Math.max(EDGE_GAP, window.innerHeight - panelHeight - EDGE_GAP));

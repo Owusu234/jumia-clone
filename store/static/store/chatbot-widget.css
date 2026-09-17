@@ -46,27 +46,21 @@
 }
 #sv-chat-panel.open { display: flex; }
 
-/* On mobile, the bottom app tab bar occupies the bottom ~64px of the
-   screen — lift the bubble (and the panel that anchors off it) clear
-   of that bar instead of letting it sit underneath/overlapping it. */
-@media (max-width: 767px) {
-  #sv-chat-bubble:not([style*="top"]) {
-    bottom: calc(84px + env(safe-area-inset-bottom));
-  }
-  #sv-chat-panel:not([style*="top"]) {
-    bottom: calc(156px + env(safe-area-inset-bottom));
-  }
-}
-
-/* The floating bubble is redundant on mobile now that "AI Chat" lives in
-   the bottom tab bar — hide it there. Using opacity/pointer-events
-   (rather than display:none) keeps it in the layout so the widget's own
-   positioning math (which reads its getBoundingClientRect) still works
-   when the tab bar opens the panel. */
+/* Mobile: keep the assistant in the upper-right, below the navbar, so it
+   never covers the cart/bottom navigation. The panel follows the launcher. */
 @media (max-width: 767px) {
   #sv-chat-bubble {
-    opacity: 0;
-    pointer-events: none;
+    top: calc(82px + env(safe-area-inset-top)) !important;
+    right: 12px !important;
+    bottom: auto !important;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #sv-chat-panel {
+    top: calc(154px + env(safe-area-inset-top)) !important;
+    right: 12px !important;
+    bottom: auto !important;
+    max-height: calc(100dvh - 166px - env(safe-area-inset-top));
   }
 }
 

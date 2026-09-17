@@ -48,8 +48,8 @@
   --warning-bg: rgba(245, 158, 11, 0.12);
   --danger: #ef4444;
   --danger-bg: rgba(239, 68, 68, 0.12);
-  --info: #3b82f6;
-  --info-bg: rgba(59, 130, 246, 0.12);
+  --info: var(--p);
+  --info-bg: rgba(246, 139, 30, 0.12);
 
   /* Chart aliases (used by analytics pages) */
   --chart-bg: var(--card);
@@ -129,6 +129,16 @@ a { transition: color 0.2s var(--ease); }
   transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), background-color 0.18s var(--ease), border-color 0.18s var(--ease), opacity 0.18s var(--ease);
 }
 .btn:active { transform: translateY(1px) scale(0.99); }
+
+/* Brand consistency: primary text and product prices use ShopVibe orange. */
+.text-primary { color: var(--p) !important; }
+.text-primary-emphasis { color: var(--p) !important; }
+.product-price,
+.related-price,
+.cart-item-price .fs-5,
+.sv-recent-card .price,
+.sv-saved-item .price,
+.sv-product-card .price { color: var(--p) !important; }
 
 .btn-primary {
   background: linear-gradient(135deg, var(--p), var(--pd)) !important;
