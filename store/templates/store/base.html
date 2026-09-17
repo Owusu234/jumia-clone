@@ -196,7 +196,7 @@
             <ul class="category-list">
                 <li><a href="{% url 'store:home' %}" class="{% if not request.GET.category %}active{% endif %}"><i class="bi bi-grid"></i> All Products</a></li>
                 <li><a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}"><i class="bi bi-camera"></i> Community Highlights</a></li>
-                <li class="desktop-chat-item"><a href="#" id="sv-desktop-chat-button" aria-label="Open Shopping Assistant"><i class="bi bi-chat-dots"></i> Chat</a></li>
+                <li class="desktop-chat-item"><button type="button" id="sv-desktop-chat-button" class="ai-chat-nav" data-sv-chat-launcher onclick="window.ShopVibeChat && window.ShopVibeChat.toggle();" aria-label="Open Shopping Assistant"><i class="bi bi-stars"></i><span>AI Assistant</span></button></li>
 
                 <li class="divider">Phones & Tech</li>
                 <li><a href="{% url 'store:home' %}?category=smartphones"><i class="bi bi-phone"></i> Smartphones</a></li>
@@ -271,9 +271,9 @@
             <a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}">
                 <i class="bi bi-camera{% if request.resolver_match.url_name == 'community_highlights' %}-fill{% endif %}"></i>Community
             </a>
-            <a href="#" id="sv-mobile-chat-button" aria-label="Open Shopping Assistant">
-                <i class="bi bi-chat-dots"></i>Chat
-            </a>
+            <button type="button" id="sv-mobile-chat-button" class="ai-chat-tab" data-sv-chat-launcher onclick="window.ShopVibeChat && window.ShopVibeChat.toggle();" aria-label="Open Shopping Assistant">
+                <span class="ai-chat-icon"><i class="bi bi-stars"></i></span><span>AI Chat</span>
+            </button>
             <a href="{% url 'store:wishlist' %}" class="position-relative {% if request.resolver_match.url_name == 'wishlist' %}active{% endif %}">
                 <i class="bi bi-heart{% if request.resolver_match.url_name == 'wishlist' %}-fill{% endif %}"></i>Wishlist
                 <span class="tab-badge" id="wishlistTabCount" style="display:none;">0</span>
@@ -284,9 +284,6 @@
             </a>
         </div>
     </nav>
-
-    <!-- NEW: Back to top -->
-    <button class="back-to-top" id="backToTop" aria-label="Back to top"><i class="bi bi-arrow-up"></i></button>
 
     <!-- NEW: Delivery Info Modal (Region & City) — shown once, before the
          first item is added to the cart, so we know where to deliver. -->
@@ -421,20 +418,6 @@
             }, 4000);
         });
     });
-    </script>
-
-    <!-- NEW: Back-to-top behaviour -->
-    <script>
-    (function() {
-        const btn = document.getElementById('backToTop');
-        if (!btn) return;
-        window.addEventListener('scroll', function() {
-            btn.classList.toggle('show', window.scrollY > 400);
-        }, { passive: true });
-        btn.addEventListener('click', function() {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-    })();
     </script>
 
     <!-- NEW: Lightweight toast helper — used by cart/wishlist JS on any page -->
@@ -617,7 +600,8 @@
     </script>
 
     {% block extra_js %}{% endblock %}
-    <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}?v=4">
-    <script src="{% static 'store/chatbot-widget.js' %}?v=4"></script>
+
+    <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}?v=9">
+    <script src="{% static 'store/chatbot-widget.js' %}?v=9"></script>
 </body>
 </html>

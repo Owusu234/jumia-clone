@@ -1,5 +1,5 @@
 <style>
-.community-page { max-width: 1180px; margin: 0 auto; padding: 8px 0 40px; }
+.community-page { width: 100%; max-width: none; margin: 0; padding: 8px 24px 40px; }
 .community-hero {
     display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 22px;
     padding: 30px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg);
@@ -23,8 +23,8 @@
 .community-stat-row strong { font-size: .95rem; color: var(--primary); }
 .community-stat-row span { margin-top: 2px; color: var(--text-muted); font-size: .68rem; }
 
-.community-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
-.community-feed-column { min-width: 0; }
+.community-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; width: 100%; }
+.community-feed-column { min-width: 0; width: 100%; }
 .community-feed-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin: 4px 0 12px; }
 .community-feed-head h2 { margin: 4px 0 0; font-size: 1.35rem; }
 .live-indicator { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: .76rem; font-weight: 700; }
@@ -107,7 +107,7 @@
     .community-sidebar { position: static; grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 @media (max-width: 767px) {
-    .community-page { padding-top: 0; padding-bottom: 26px; }
+    .community-page { width: 100%; padding: 0 12px 26px; }
     .community-hero { grid-template-columns: 1fr; padding: 22px 18px; border-radius: var(--radius); gap: 18px; }
     .community-hero h1 { font-size: 1.85rem; }
     .community-hero-actions .btn { flex: 1 1 auto; }

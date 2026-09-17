@@ -1,3 +1,41 @@
+/* LEGACY FLOATING LAUNCHER — permanently disabled.
+   Chat is launched from the desktop sidebar and mobile bottom navigation. */
+#sv-chat-bubble, [id="sv-chat-bubble"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+
+/* Desktop sidebar AI assistant launcher */
+.desktop-chat-item .ai-chat-nav {
+  width: 100%;
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--primary); border-radius: 12px;
+  padding: 13px 16px;
+  background: var(--surface); color: var(--primary);
+  font: inherit; font-weight: 700; text-align: left; cursor: pointer;
+  transition: .2s ease;
+}
+.desktop-chat-item .ai-chat-nav:hover, .desktop-chat-item .ai-chat-nav.active {
+  background: var(--primary); color: #fff !important; transform: translateX(2px);
+}
+.desktop-chat-item .ai-chat-nav i { font-size: 1.05rem; }
+
+/* Distinct AI styling in the mobile bottom navigation. */
+.mobile-tabbar .ai-chat-tab {
+  position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; border: 0; background: transparent; color: var(--text-muted);
+  font: inherit; font-size: .68rem; font-weight: 700; cursor: pointer; padding: 4px 5px;
+}
+.mobile-tabbar .ai-chat-icon {
+  width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px;
+  background: var(--primary); color: #fff; box-shadow: var(--shadow-brand);
+}
+.mobile-tabbar .ai-chat-tab:hover, .mobile-tabbar .ai-chat-tab.active { color: var(--primary); }
+.mobile-tabbar .ai-chat-tab.active .ai-chat-icon { transform: translateY(-1px); }
+
 /* ShopVibe AI Recommendation Chatbot — widget styles */
 
 #sv-chat-panel {
@@ -171,4 +209,13 @@
   0% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.5); }
   70% { box-shadow: 0 0 0 8px rgba(229, 57, 53, 0); }
   100% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }
+}
+
+/* No floating action/back-to-top controls. */
+.back-to-top, #backToTop, #sv-chat-bubble, .sv-chat-bubble, .chatbot-fab, .ai-chat-fab { display:none !important; visibility:hidden !important; pointer-events:none !important; }
+
+.desktop-chat-item { margin: 2px 6px; }
+.desktop-chat-item .ai-chat-nav:focus-visible, .mobile-tabbar .ai-chat-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (max-width: 767px) {
+  .mobile-tabbar .ai-chat-tab { min-width: 0; }
 }
