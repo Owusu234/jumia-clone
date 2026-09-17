@@ -74,18 +74,20 @@
                 {% endif %}
             </nav>
 
-            {% for h in highlights %}
-                {% include 'store/_highlight_card.html' %}
-            {% empty %}
-            <div class="community-empty">
-                <div class="empty-icon"><i class="bi bi-camera"></i></div>
-                <h3>No community posts yet</h3>
-                <p>Be the first shopper to share a verified purchase experience.</p>
-                {% if user.is_authenticated and eligible_items %}
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postHighlightModal">Share your experience</button>
-                {% endif %}
+            <div class="hl-feed-grid">
+                {% for h in highlights %}
+                    {% include 'store/_highlight_card.html' %}
+                {% empty %}
+                <div class="community-empty">
+                    <div class="empty-icon"><i class="bi bi-camera"></i></div>
+                    <h3>No community posts yet</h3>
+                    <p>Be the first shopper to share a verified purchase experience.</p>
+                    {% if user.is_authenticated and eligible_items %}
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postHighlightModal">Share your experience</button>
+                    {% endif %}
+                </div>
+                {% endfor %}
             </div>
-            {% endfor %}
 
             {% if page_obj.has_other_pages %}
             <nav class="community-pagination" aria-label="Community pagination">

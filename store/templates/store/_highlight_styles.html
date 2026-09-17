@@ -59,7 +59,8 @@
 .community-steps p { margin: 2px 0 0; color: var(--text-muted); font-size: .72rem; line-height: 1.5; }
 
 /* Social feed cards */
-.hl-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; box-shadow: var(--shadow-sm); transition: box-shadow .2s var(--ease), transform .2s var(--ease); }
+.hl-feed-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+.hl-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 0; box-shadow: var(--shadow-sm); transition: box-shadow .2s var(--ease), transform .2s var(--ease); }
 .hl-card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
 .hl-card-head { padding: 15px 16px 12px; display: flex; align-items: center; gap: 10px; }
 .hl-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
@@ -97,7 +98,7 @@
 .hl-comment .who { font-size: .74rem; font-weight: 800; }
 .hl-comment .txt { font-size: .8rem; color: var(--text-muted); margin: 2px 0 0; }
 
-.community-empty { text-align: center; padding: 56px 20px; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--surface); }
+.community-empty { grid-column: 1 / -1; text-align: center; padding: 56px 20px; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--surface); }
 .empty-icon { width: 52px; height: 52px; display: grid; place-items: center; margin: 0 auto 12px; border-radius: 50%; background: var(--info-bg); color: var(--primary); font-size: 1.25rem; }
 .community-empty h3 { font-size: 1rem; margin-bottom: 5px; }
 .community-empty p { color: var(--text-muted); font-size: .8rem; margin-bottom: 16px; }
@@ -108,6 +109,7 @@
     .community-sidebar { position: static; grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 @media (max-width: 767px) {
+    .hl-feed-grid { grid-template-columns: 1fr; gap: 16px; }
     .community-page { width: 100%; padding: 0 12px 26px; }
     .community-hero { grid-template-columns: 1fr; padding: 22px 18px; border-radius: var(--radius); gap: 18px; }
     .community-hero h1 { font-size: 1.85rem; }
