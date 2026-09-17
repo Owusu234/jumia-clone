@@ -1,7 +1,7 @@
 /* ShopVibe AI Recommendation Chatbot — shared chat panel.
    Desktop launcher: sidebar Chat item.
    Mobile launcher: bottom navigation Chat item.
-   No floating action button exists or is created anywhere. */
+   No floating action button is created anywhere. */
 
 (function () {
   const ENDPOINT = "/api/chatbot/recommend/";
@@ -10,10 +10,7 @@
 
   // Remove any legacy floating launcher left in the DOM by an older cached
   // chatbot script. The navigation buttons are the only supported launchers.
-  const removeLegacyFloatingElements = () => {
-    removeLegacyFloatingElements();
-  };
-  removeLegacyFloatingElements();
+  document.querySelectorAll("#sv-chat-bubble, .sv-chat-bubble, .chatbot-fab, .ai-chat-fab, .floating-ai-button, .floating-chat-button, #backToTop, .back-to-top").forEach((el) => el.remove());
 
   const panel = document.createElement("div");
   panel.id = "sv-chat-panel";
@@ -80,18 +77,16 @@
     setTimeout(() => inputEl.focus(), 0);
   }
 
-  // Navigation buttons are wired directly to the assistant.
-  // No navigation/default action is allowed to run for these launchers.
-  mobileChatBtn?.addEventListener("click", (e) => {
+  // Use delegated handling as well as direct listeners so the launcher still
+  // works if the navigation is re-rendered by another page script.
+  document.addEventListener("click", (e) => {
+    const launcher = e.target.closest?.("[data-sv-chat-launcher], #sv-mobile-chat-button, #sv-desktop-chat-button");
+    if (!launcher) return;
     e.preventDefault();
     e.stopPropagation();
     toggleChat();
   });
-  desktopChatBtn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    toggleChat();
-  });
+
   closeBtn.addEventListener("click", () => {
     panel.classList.remove("open");
     mobileChatBtn?.classList.remove("active");
@@ -111,7 +106,7 @@
 
   // Defensive cleanup against an older cached script creating the legacy bubble.
   const bubbleGuard = new MutationObserver(() => {
-    removeLegacyFloatingElements();
+    document.querySelectorAll("#sv-chat-bubble, .sv-chat-bubble, .chatbot-fab, .ai-chat-fab, .floating-ai-button, .floating-chat-button, #backToTop, .back-to-top").forEach((el) => el.remove());
   });
   bubbleGuard.observe(document.body, { childList: true });
 

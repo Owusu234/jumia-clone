@@ -1,32 +1,7 @@
-/* Chat launchers live in the existing navigation. There is no floating AI launcher. */
-#sv-chat-bubble, #sv-chat-bubble *, .sv-chat-bubble, .chatbot-fab, .ai-chat-fab, #backToTop, .back-to-top {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
+/* AI chat has no floating launcher. Legacy floating launchers are permanently disabled. */
+#sv-chat-bubble, .sv-chat-bubble, .chatbot-fab, .ai-chat-fab, .floating-ai-button, .floating-chat-button, #backToTop, .back-to-top {
+  display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important;
 }
-
-/* AI Assistant uses the same visual treatment as the existing sidebar links. */
-.desktop-chat-item { margin: 0; }
-.desktop-chat-item .ai-chat-nav {
-  width: 100%; display: flex; align-items: center; gap: 10px;
-  border: 0; border-radius: 0; padding: 10px 20px;
-  background: transparent; color: var(--muted);
-  font: inherit; font-size: .9rem; text-align: left; cursor: pointer;
-}
-.desktop-chat-item .ai-chat-nav:hover, .desktop-chat-item .ai-chat-nav.active {
-  background: rgba(246,139,30,0.1); color: var(--p) !important;
-}
-.desktop-chat-item .ai-chat-nav i { font-size: 1.1rem; width: 20px; text-align: center; }
-
-/* AI Chat uses the exact same button structure as the other mobile tabs. */
-.mobile-tabbar .ai-chat-tab {
-  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px; border: 0; background: transparent; color: var(--text-muted);
-  font: inherit; font-size: .68rem; font-weight: 700; cursor: pointer; padding: 4px 5px;
-}
-.mobile-tabbar .ai-chat-tab:hover, .mobile-tabbar .ai-chat-tab.active { color: var(--primary); }
-.mobile-tabbar .ai-chat-tab i { font-size: 1.25rem; line-height: 1; }
 
 /* ShopVibe AI Recommendation Chatbot — widget styles */
 
@@ -62,12 +37,6 @@
   }
   .desktop-chat-item { display: none !important; }
 }
-
-.desktop-chat-item a.active {
-  background: rgba(246,139,30,0.10);
-  color: var(--p) !important;
-}
-
 
 #sv-chat-header {
   background: #1a1a1a;

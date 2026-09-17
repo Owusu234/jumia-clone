@@ -196,7 +196,7 @@
             <ul class="category-list">
                 <li><a href="{% url 'store:home' %}" class="{% if not request.GET.category %}active{% endif %}"><i class="bi bi-grid"></i> All Products</a></li>
                 <li><a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}"><i class="bi bi-camera"></i> Community Highlights</a></li>
-                <li class="desktop-chat-item"><button type="button" id="sv-desktop-chat-button" class="ai-chat-nav" aria-label="Open Shopping Assistant"><i class="bi bi-stars"></i><span>AI Assistant</span></button></li>
+                <li class="desktop-chat-item"><a href="#" id="sv-desktop-chat-button" data-sv-chat-launcher aria-label="Open Shopping Assistant"><i class="bi bi-stars"></i> AI Assistant</a></li>
 
                 <li class="divider">Phones & Tech</li>
                 <li><a href="{% url 'store:home' %}?category=smartphones"><i class="bi bi-phone"></i> Smartphones</a></li>
@@ -271,9 +271,7 @@
             <a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}">
                 <i class="bi bi-camera{% if request.resolver_match.url_name == 'community_highlights' %}-fill{% endif %}"></i>Community
             </a>
-            <button type="button" id="sv-mobile-chat-button" class="ai-chat-tab" aria-label="Open Shopping Assistant">
-                <i class="bi bi-stars"></i><span>AI Chat</span>
-            </button>
+            <a href="#" id="sv-mobile-chat-button" data-sv-chat-launcher aria-label="Open Shopping Assistant"><i class="bi bi-stars"></i>AI Chat</a>
             <a href="{% url 'store:wishlist' %}" class="position-relative {% if request.resolver_match.url_name == 'wishlist' %}active{% endif %}">
                 <i class="bi bi-heart{% if request.resolver_match.url_name == 'wishlist' %}-fill{% endif %}"></i>Wishlist
                 <span class="tab-badge" id="wishlistTabCount" style="display:none;">0</span>
