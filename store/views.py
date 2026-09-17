@@ -4146,6 +4146,15 @@ def chat_send(req, conversation_id):
 
 @login_required
 @require_POST
+def chat_delete_conversation(req, conversation_id):
+    """Delete an entire chat conversation for either participant."""
+    conv = _get_conversation_or_404(req.user, conversation_id)
+    conv.delete()
+    return JsonResponse({'success': True, 'conversation_id': conversation_id})
+
+
+@login_required
+@require_POST
 def chat_delete_message(req, conversation_id, message_id):
     """Soft-delete one message authored by the current buyer or seller."""
     conv = _get_conversation_or_404(req.user, conversation_id)

@@ -6,29 +6,38 @@
   <p class="text-muted small mb-4">Each conversation is private between you and the other party.</p>
 
   {% for thread in threads %}
-  <a href="{% url 'store:chat_thread' thread.conversation.id %}"
-     class="card border-theme bg-card p-3 mb-3 text-decoration-none d-block">
+  <div class="card border-theme bg-card p-3 mb-3">
     <div class="d-flex align-items-center gap-3">
-      <img src="{{ thread.conversation.product.get_image }}" alt="{{ thread.conversation.product.name }}"
-           style="width:56px;height:56px;object-fit:contain;background:#fff;" class="rounded border-theme">
-      <div class="flex-grow-1">
-        <div class="d-flex align-items-center gap-2">
-          <h6 class="fw-bold mb-0">{{ thread.counterparty }}</h6>
-          {% if thread.is_seller_side %}
-            <span class="badge bg-secondary">Buyer</span>
-          {% else %}
-            <span class="badge bg-primary">Seller</span>
+      <a href="{% url 'store:chat_thread' thread.conversation.id %}"
+         class="d-flex align-items-center gap-3 flex-grow-1 text-decoration-none min-width-0">
+        <img src="{{ thread.conversation.product.get_image }}" alt="{{ thread.conversation.product.name }}"
+             style="width:56px;height:56px;object-fit:contain;background:#fff;flex:0 0 56px;" class="rounded border-theme">
+        <div class="flex-grow-1 min-width-0">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h6 class="fw-bold mb-0">{{ thread.counterparty }}</h6>
+            {% if thread.is_seller_side %}
+              <span class="badge bg-secondary">Buyer</span>
+            {% else %}
+              <span class="badge bg-primary">Seller</span>
+            {% endif %}
+            {% if thread.unread %}<span class="badge bg-danger">{{ thread.unread }} new</span>{% endif %}
+          </div>
+          <small class="text-muted d-block">{{ thread.conversation.product.name }}</small>
+          {% if thread.last_message %}
+            <small class="text-muted">{{ thread.last_message.body|truncatechars:70 }}</small>
           {% endif %}
-          {% if thread.unread %}<span class="badge bg-danger">{{ thread.unread }} new</span>{% endif %}
         </div>
-        <small class="text-muted d-block">{{ thread.conversation.product.name }}</small>
-        {% if thread.last_message %}
-          <small class="text-muted">{{ thread.last_message.body|truncatechars:70 }}</small>
-        {% endif %}
-      </div>
-      <i class="bi bi-chevron-right text-muted"></i>
+        <i class="bi bi-chevron-right text-muted"></i>
+      </a>
+      <button type="button"
+              class="btn btn-sm btn-outline-danger flex-shrink-0 chat-delete-thread"
+              title="Delete conversation"
+              aria-label="Delete conversation with {{ thread.counterparty }}"
+              data-delete-url="{% url 'store:chat_delete_conversation' thread.conversation.id %}">
+        <i class="bi bi-trash3"></i>
+      </button>
     </div>
-  </a>
+  </div>
   {% empty %}
   <div class="text-center py-5">
     <i class="bi bi-chat-square-text" style="font-size:3rem;opacity:.3;"></i>
@@ -38,4 +47,56 @@
   </div>
   {% endfor %}
 </div>
+
+<style>
+  .min-width-0 { min-width: 0; }
+  .chat-delete-thread {
+    width: 38px;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  @media (max-width: 576px) {
+    .chat-delete-thread { width: 40px; height: 40px; }
+  }
+</style>
+<script>
+(function () {
+  function getCookie(name) {
+    const match = document.cookie.match('(^|;)\\s*' + name + '=([^;]+)');
+    return match ? decodeURIComponent(match[2]) : '';
+  }
+
+  document.querySelectorAll('.chat-delete-thread').forEach(function (button) {
+    button.addEventListener('click', async function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!window.confirm('Delete this entire conversation? This cannot be undone.')) return;
+
+      const url = button.dataset.deleteUrl;
+      button.disabled = true;
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Could not delete the conversation.');
+        }
+        button.closest('.card').remove();
+      } catch (error) {
+        button.disabled = false;
+        window.alert(error.message || 'Could not delete the conversation.');
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}
