@@ -1,130 +1,120 @@
 {% extends "store/base.html" %}
-{% block title %}Community Highlights | ShopVibe{% endblock %}
+{% block title %}Community | ShopVibe{% endblock %}
 
 {% block extra_css %}
 {% include 'store/_highlight_styles.html' %}
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid px-0 community-page-original" style="max-width: 900px; margin-left: 0; margin-right: auto;">
-
-    <!-- ── Header ─────────────────────────────────────────────── -->
-    <div class="hl-eyebrow"><i class="bi bi-patch-check"></i> Proof-of-Purchase Feed &amp; Automated Rewards</div>
-    <h1 class="hl-title">Community Highlights</h1>
-    <p class="hl-intro">
-        Real unboxings, strictly backed by confirmed <strong>Paid &amp; Delivered</strong> orders.
-        Every interaction earns the post points:
-        <strong>Likes (+{{ point_values.like }})</strong> &bull;
-        <strong>Comments (+{{ point_values.comment }})</strong> &bull;
-        <strong>Shares (+{{ point_values.share }})</strong>.
-        Reaching the seller's threshold automatically deposits a unique discount
-        voucher into the buyer's wallet.
-    </p>
-
-    {% if user.is_authenticated %}
-        {% if eligible_items %}
-        <button class="btn btn-success fw-bold px-4 py-2 mt-3" data-bs-toggle="modal" data-bs-target="#postHighlightModal">
-            <i class="bi bi-plus-circle me-2"></i>Post Unboxing Review
-        </button>
-        {% else %}
-        <div class="alert alert-secondary mt-3 mb-0 small">
-            <i class="bi bi-info-circle me-1"></i>
-            You can post a highlight once one of your orders is marked
-            <strong>paid</strong> and <strong>delivered</strong>.
-            <a href="{% url 'store:user_orders' %}" class="alert-link">Check your orders</a>.
-        </div>
-        {% endif %}
-    {% else %}
-    <a href="{% url 'store:login' %}" class="btn btn-success fw-bold px-4 py-2 mt-3">
-        <i class="bi bi-box-arrow-in-right me-2"></i>Log in to join the community
-    </a>
-    {% endif %}
-
-    <!-- ── Points legend ──────────────────────────────────────── -->
-    <div class="hl-legend">
-        <div class="row g-3">
-            <div class="col-6">
-                <div class="hl-point-card">
-                    <div class="lbl"><i class="bi bi-heart"></i> Like Action</div>
-                    <div class="val">+{{ point_values.like }} Point</div>
-                    <div class="hint">Instant support signal</div>
+<div class="community-page">
+    <div class="community-layout" id="community-feed">
+        <!-- Main feed -->
+        <main class="community-feed-column">
+            {% if user.is_authenticated and not eligible_items %}
+            <div class="community-notice">
+                <div class="notice-icon"><i class="bi bi-box-seam"></i></div>
+                <div>
+                    <strong>Share after delivery</strong>
+                    <p>Once one of your purchases is paid and delivered, you can publish an unboxing experience here.</p>
                 </div>
+                <a href="{% url 'store:user_orders' %}" class="btn btn-sm btn-outline-secondary">View orders</a>
             </div>
-            <div class="col-6">
-                <div class="hl-point-card">
-                    <div class="lbl"><i class="bi bi-chat"></i> Discussion Comment</div>
-                    <div class="val">+{{ point_values.comment }} Points</div>
-                    <div class="hint">First comment per shopper scores</div>
-                </div>
-            </div>
-            <div class="col-6">
-                <div class="hl-point-card">
-                    <div class="lbl"><i class="bi bi-share"></i> Share Highlight</div>
-                    <div class="val">+{{ point_values.share }} Points</div>
-                    <div class="hint">Direct link dispatch</div>
-                </div>
-            </div>
-            <div class="col-6">
-                <div class="hl-point-card reward">
-                    <div class="lbl"><i class="bi bi-gift"></i> Threshold Reward</div>
-                    <div class="val">Automated Voucher</div>
-                    <div class="hint">Deposited to buyer wallet</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ── Voucher wallet strip ───────────────────────────────── -->
-    {% if my_vouchers %}
-    <div class="hl-wallet d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <strong><i class="bi bi-wallet2 me-1"></i>{{ my_vouchers|length }} voucher{{ my_vouchers|pluralize }} ready</strong>
-            <div class="small text-muted">Unlocked by your highlights hitting their goal.</div>
-        </div>
-        <a href="{% url 'store:my_vouchers' %}" class="btn btn-sm btn-outline-success fw-bold">Open wallet</a>
-    </div>
-    {% endif %}
-
-    <!-- ── Tabs ───────────────────────────────────────────────── -->
-    <div class="hl-tabs">
-        <a href="?tab=all" class="hl-tab {% if tab == 'all' %}active{% endif %}">All Highlights ({{ total_count }})</a>
-        <a href="?tab=engaged" class="hl-tab {% if tab == 'engaged' %}active{% endif %}">🔥 High Engagement</a>
-        <a href="?tab=unlocked" class="hl-tab {% if tab == 'unlocked' %}active{% endif %}">🎁 Unlocked Coupons</a>
-        {% if user.is_authenticated %}
-        <a href="?tab=mine" class="hl-tab {% if tab == 'mine' %}active{% endif %}">My Posts</a>
-        {% endif %}
-    </div>
-    <div class="hl-sync">Live sync &bull; ShopVibe Marketplace</div>
-
-    <!-- ── Feed ───────────────────────────────────────────────── -->
-    {% for h in highlights %}
-    {% include 'store/_highlight_card.html' %}
-
-    {% empty %}
-    <div class="text-center py-5">
-        <i class="bi bi-camera" style="font-size: 3rem; opacity: 0.25;"></i>
-        <h5 class="mt-3">No highlights here yet</h5>
-        <p class="text-muted">Be the first to share an unboxing from a delivered order.</p>
-    </div>
-    {% endfor %}
-
-    <!-- ── Pagination ─────────────────────────────────────────── -->
-    {% if page_obj.has_other_pages %}
-    <nav class="mt-4">
-        <ul class="pagination justify-content-center pagination-sm">
-            {% if page_obj.has_previous %}
-            <li class="page-item"><a class="page-link" href="?tab={{ tab }}&page={{ page_obj.previous_page_number }}">Prev</a></li>
             {% endif %}
-            <li class="page-item active"><span class="page-link">{{ page_obj.number }}/{{ page_obj.paginator.num_pages }}</span></li>
-            {% if page_obj.has_next %}
-            <li class="page-item"><a class="page-link" href="?tab={{ tab }}&page={{ page_obj.next_page_number }}">Next</a></li>
+
+            <div class="community-feed-head">
+                <div>
+                    <span class="section-eyebrow">Community feed</span>
+                    <h2>Latest experiences</h2>
+                </div>
+                <span class="live-indicator"><i></i> Live</span>
+            </div>
+
+            <nav class="community-tabs" aria-label="Community filters">
+                <a href="?tab=all" class="community-tab {% if tab == 'all' %}active{% endif %}">All posts</a>
+                <a href="?tab=engaged" class="community-tab {% if tab == 'engaged' %}active{% endif %}">Popular</a>
+                <a href="?tab=unlocked" class="community-tab {% if tab == 'unlocked' %}active{% endif %}">Rewards unlocked</a>
+                {% if user.is_authenticated %}
+                <a href="?tab=mine" class="community-tab {% if tab == 'mine' %}active{% endif %}">My posts</a>
+                {% endif %}
+            </nav>
+
+            {% for h in highlights %}
+                {% include 'store/_highlight_card.html' %}
+            {% empty %}
+            <div class="community-empty">
+                <div class="empty-icon"><i class="bi bi-camera"></i></div>
+                <h3>No community posts yet</h3>
+                <p>Be the first shopper to share a verified purchase experience.</p>
+                {% if user.is_authenticated and eligible_items %}
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postHighlightModal">Share your experience</button>
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            {% if page_obj.has_other_pages %}
+            <nav class="community-pagination" aria-label="Community pagination">
+                {% if page_obj.has_previous %}
+                <a href="?tab={{ tab }}&page={{ page_obj.previous_page_number }}" class="btn btn-sm btn-outline-secondary">Previous</a>
+                {% endif %}
+                <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                <a href="?tab={{ tab }}&page={{ page_obj.next_page_number }}" class="btn btn-sm btn-outline-secondary">Next</a>
+                {% endif %}
+            </nav>
             {% endif %}
-        </ul>
-    </nav>
-    {% endif %}
+        </main>
+
+        <!-- Community sidebar -->
+        <aside class="community-sidebar">
+            <section class="community-side-card">
+                <div class="side-card-heading">
+                    <div>
+                        <span class="section-eyebrow">Rewards</span>
+                        <h3>Earn as you engage</h3>
+                    </div>
+                    <i class="bi bi-gift"></i>
+                </div>
+                <div class="reward-list">
+                    <div class="reward-item"><span><i class="bi bi-heart"></i> Like a post</span><strong>+{{ point_values.like }}</strong></div>
+                    <div class="reward-item"><span><i class="bi bi-chat"></i> Leave a comment</span><strong>+{{ point_values.comment }}</strong></div>
+                    <div class="reward-item"><span><i class="bi bi-share"></i> Share a post</span><strong>+{{ point_values.share }}</strong></div>
+                </div>
+                <p class="side-note">When a post reaches the seller's target, the buyer can receive a unique discount voucher.</p>
+            </section>
+
+            {% if my_vouchers %}
+            <section class="community-side-card wallet-card">
+                <div class="side-card-heading">
+                    <div>
+                        <span class="section-eyebrow">Your wallet</span>
+                        <h3>Rewards ready</h3>
+                    </div>
+                    <i class="bi bi-wallet2"></i>
+                </div>
+                <strong class="wallet-count">{{ my_vouchers|length }} voucher{{ my_vouchers|pluralize }}</strong>
+                <p class="side-note">Rewards unlocked from your community activity.</p>
+                <a href="{% url 'store:my_vouchers' %}" class="btn btn-sm btn-outline-primary w-100">Open wallet</a>
+            </section>
+            {% endif %}
+
+            <section class="community-side-card">
+                <div class="side-card-heading">
+                    <div>
+                        <span class="section-eyebrow">How it works</span>
+                        <h3>Share. Engage. Earn.</h3>
+                    </div>
+                    <i class="bi bi-stars"></i>
+                </div>
+                <ol class="community-steps">
+                    <li><span>1</span><div><strong>Buy and receive</strong><p>Complete a purchase and wait until it is paid and delivered.</p></div></li>
+                    <li><span>2</span><div><strong>Share your experience</strong><p>Post an honest unboxing story with a photo or short clip.</p></div></li>
+                    <li><span>3</span><div><strong>Build engagement</strong><p>Likes, comments, and shares add points toward the seller's reward goal.</p></div></li>
+                </ol>
+            </section>
+        </aside>
+    </div>
 </div>
 
-<!-- ── Post highlight modal ───────────────────────────────────── -->
 {% if user.is_authenticated and eligible_items %}
 <div class="modal fade" id="postHighlightModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -132,41 +122,37 @@
             <form method="post" action="{% url 'store:create_highlight' %}" enctype="multipart/form-data">
                 {% csrf_token %}
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-camera me-2"></i>Post an Unboxing Highlight</h5>
+                    <h5 class="modal-title fw-bold">Share a purchase experience</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Which delivered item?</label>
+                        <label class="form-label fw-semibold">Purchase</label>
                         <select name="order_item" class="form-select" required>
-                            <option value="">Choose a paid &amp; delivered purchase…</option>
+                            <option value="">Choose a paid and delivered purchase</option>
                             {% for item in eligible_items %}
-                            <option value="{{ item.id }}">
-                                {{ item.product.name|truncatechars:48 }} — Order #{{ item.order.reference|truncatechars:14 }}
-                            </option>
+                            <option value="{{ item.id }}">{{ item.product.name|truncatechars:48 }} — Order #{{ item.order.reference|truncatechars:14 }}</option>
                             {% endfor %}
                         </select>
-                        <div class="form-text">Only orders marked paid and delivered appear here. One highlight per item.</div>
+                        <div class="form-text">Only eligible delivered purchases are shown.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Title</label>
-                        <input type="text" name="title" class="form-control" maxlength="160" required
-                               placeholder="e.g. Unboxing the Gold Chronometer in Airport Residential!">
+                        <input type="text" name="title" class="form-control" maxlength="160" required placeholder="Tell shoppers what stood out about your purchase">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Your story</label>
-                        <textarea name="body" class="form-control" rows="4" maxlength="2000" required
-                                  placeholder="How fast was delivery? How was the packaging? What surprised you?"></textarea>
+                        <label class="form-label fw-semibold">Your experience</label>
+                        <textarea name="body" class="form-control" rows="4" maxlength="2000" required placeholder="Share your thoughts on delivery, packaging, product quality, and anything shoppers should know."></textarea>
                     </div>
                     <div class="mb-1">
-                        <label class="form-label fw-semibold">Photo or short clip <span class="text-muted fw-normal">(optional)</span></label>
+                        <label class="form-label fw-semibold">Photo or short video <span class="text-muted fw-normal">(optional)</span></label>
                         <input type="file" name="media" class="form-control" accept="image/*,video/mp4,video/webm,video/quicktime">
-                        <div class="form-text">Up to 25 MB. Photos are resized automatically.</div>
+                        <div class="form-text">Maximum 25 MB. Images are resized automatically.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success fw-bold"><i class="bi bi-plus-circle me-1"></i>Post Highlight</button>
+                    <button type="submit" class="btn btn-primary fw-semibold">Publish experience</button>
                 </div>
             </form>
         </div>
