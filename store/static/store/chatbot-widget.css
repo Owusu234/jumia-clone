@@ -1,3 +1,12 @@
+/* LEGACY FLOATING LAUNCHER — permanently disabled.
+   Chat is launched from the desktop sidebar and mobile bottom navigation. */
+#sv-chat-bubble, [id="sv-chat-bubble"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ShopVibe AI Recommendation Chatbot — widget styles */
 
 #sv-chat-panel {

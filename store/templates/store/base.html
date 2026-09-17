@@ -196,7 +196,7 @@
             <ul class="category-list">
                 <li><a href="{% url 'store:home' %}" class="{% if not request.GET.category %}active{% endif %}"><i class="bi bi-grid"></i> All Products</a></li>
                 <li><a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}"><i class="bi bi-camera"></i> Community Highlights</a></li>
-                <li class="desktop-chat-item"><a href="#" id="sv-desktop-chat-button" aria-label="Open Shopping Assistant"><i class="bi bi-chat-dots"></i> Chat</a></li>
+                <li class="desktop-chat-item"><a href="javascript:void(0)" id="sv-desktop-chat-button" data-sv-chat-launcher aria-label="Open Shopping Assistant"><i class="bi bi-chat-dots"></i> Chat</a></li>
 
                 <li class="divider">Phones & Tech</li>
                 <li><a href="{% url 'store:home' %}?category=smartphones"><i class="bi bi-phone"></i> Smartphones</a></li>
@@ -271,7 +271,7 @@
             <a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}">
                 <i class="bi bi-camera{% if request.resolver_match.url_name == 'community_highlights' %}-fill{% endif %}"></i>Community
             </a>
-            <a href="#" id="sv-mobile-chat-button" aria-label="Open Shopping Assistant">
+            <a href="javascript:void(0)" id="sv-mobile-chat-button" data-sv-chat-launcher aria-label="Open Shopping Assistant">
                 <i class="bi bi-chat-dots"></i>Chat
             </a>
             <a href="{% url 'store:wishlist' %}" class="position-relative {% if request.resolver_match.url_name == 'wishlist' %}active{% endif %}">
@@ -617,7 +617,17 @@
     </script>
 
     {% block extra_js %}{% endblock %}
-    <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}?v=4">
-    <script src="{% static 'store/chatbot-widget.js' %}?v=4"></script>
+
+    <!-- Never render the legacy floating AI launcher. Chat is launched only from navigation. -->
+    <style id="sv-no-floating-chat">
+        #sv-chat-bubble, [id="sv-chat-bubble"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}?v=7">
+    <script src="{% static 'store/chatbot-widget.js' %}?v=7"></script>
 </body>
 </html>

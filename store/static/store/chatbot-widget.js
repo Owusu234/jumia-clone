@@ -8,6 +8,10 @@
   const mobileChatBtn = document.getElementById("sv-mobile-chat-button");
   const desktopChatBtn = document.getElementById("sv-desktop-chat-button");
 
+  // Remove any legacy floating launcher left in the DOM by an older cached
+  // chatbot script. The navigation buttons are the only supported launchers.
+  document.querySelectorAll("#sv-chat-bubble").forEach((el) => el.remove());
+
   const panel = document.createElement("div");
   panel.id = "sv-chat-panel";
   panel.innerHTML = `
@@ -73,8 +77,18 @@
     setTimeout(() => inputEl.focus(), 0);
   }
 
-  mobileChatBtn?.addEventListener("click", (e) => { e.preventDefault(); toggleChat(); });
-  desktopChatBtn?.addEventListener("click", (e) => { e.preventDefault(); toggleChat(); });
+  // Use delegated handling as well as direct listeners so the launcher still
+  // works if the navigation is re-rendered by another page script.
+  document.addEventListener("click", (e) => {
+    const launcher = e.target.closest?.("[data-sv-chat-launcher], #sv-mobile-chat-button, #sv-desktop-chat-button");
+    if (!launcher) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleChat();
+  });
+
+  mobileChatBtn?.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+  desktopChatBtn?.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
   closeBtn.addEventListener("click", () => {
     panel.classList.remove("open");
     mobileChatBtn?.classList.remove("active");
@@ -83,6 +97,21 @@
   closeBtn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") closeBtn.click();
   });
+  window.ShopVibeChat = {
+    toggle: toggleChat,
+    close: () => {
+      panel.classList.remove("open");
+      mobileChatBtn?.classList.remove("active");
+      desktopChatBtn?.classList.remove("active");
+    }
+  };
+
+  // Defensive cleanup against an older cached script creating the legacy bubble.
+  const bubbleGuard = new MutationObserver(() => {
+    document.querySelectorAll("#sv-chat-bubble").forEach((el) => el.remove());
+  });
+  bubbleGuard.observe(document.body, { childList: true });
+
   window.addEventListener("resize", () => {
     if (!panel.classList.contains("open")) return;
     if (window.innerWidth <= 767) positionMobilePanel();
