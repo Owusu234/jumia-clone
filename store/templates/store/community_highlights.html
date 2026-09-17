@@ -7,6 +7,42 @@
 
 {% block content %}
 <div class="community-page">
+    <!-- Community hero -->
+    <section class="community-hero">
+        <div class="community-hero-copy">
+            <span class="community-kicker"><i class="bi bi-people-fill"></i> ShopVibe Community</span>
+            <h1>Real shoppers. Real purchases. Real experiences.</h1>
+            <p>
+                Discover verified unboxing stories from ShopVibe shoppers, join the conversation,
+                and earn points when you support the community.
+            </p>
+            <div class="community-hero-actions">
+                {% if user.is_authenticated and eligible_items %}
+                <button class="btn btn-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#postHighlightModal">
+                    <i class="bi bi-plus-lg me-2"></i>Share an experience
+                </button>
+                {% elif not user.is_authenticated %}
+                <a href="{% url 'store:login' %}" class="btn btn-primary fw-semibold">
+                    <i class="bi bi-box-arrow-in-right me-2"></i>Join the community
+                </a>
+                {% endif %}
+                <a href="#community-feed" class="btn btn-outline-secondary fw-semibold">Explore posts</a>
+            </div>
+        </div>
+        <div class="community-hero-stats">
+            <div class="community-stat-main">
+                <span class="stat-label">Community posts</span>
+                <strong>{{ total_count }}</strong>
+                <span class="stat-note">Verified purchase experiences</span>
+            </div>
+            <div class="community-stat-row">
+                <div><strong>+{{ point_values.like }}</strong><span>Like</span></div>
+                <div><strong>+{{ point_values.comment }}</strong><span>Comment</span></div>
+                <div><strong>+{{ point_values.share }}</strong><span>Share</span></div>
+            </div>
+        </div>
+    </section>
+
     <div class="community-layout" id="community-feed">
         <!-- Main feed -->
         <main class="community-feed-column">

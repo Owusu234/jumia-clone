@@ -1,5 +1,29 @@
-.community-page { width: 100%; max-width: 1120px; margin: 0 auto; padding: 4px 0 40px; }
-.community-layout { display: grid; grid-template-columns: minmax(0, 520px) minmax(300px, 1fr); gap: 28px; align-items: start; }
+<style>
+.community-page { max-width: 1180px; margin: 0 auto; padding: 8px 0 40px; }
+.community-hero {
+    display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 22px;
+    padding: 30px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--surface), var(--bg)); box-shadow: var(--shadow-sm);
+}
+.community-hero-copy { min-width: 0; }
+.community-kicker, .section-eyebrow {
+    display: inline-flex; align-items: center; gap: 7px; color: var(--primary); font-size: .75rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .08em;
+}
+.community-hero h1 { max-width: 760px; margin: 10px 0 12px; font-size: clamp(2rem, 4vw, 3.1rem); line-height: 1.08; }
+.community-hero p { max-width: 700px; margin: 0; color: var(--text-muted); line-height: 1.7; font-size: .98rem; }
+.community-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+.community-hero-stats { align-self: stretch; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; }
+.community-stat-main { padding: 20px; border-radius: var(--radius); background: var(--primary); color: #fff; box-shadow: var(--shadow-brand); }
+.community-stat-main .stat-label, .community-stat-main .stat-note { display: block; font-size: .76rem; opacity: .88; }
+.community-stat-main strong { display: block; margin: 4px 0; font-family: var(--font-display); font-size: 2.5rem; line-height: 1; }
+.community-stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.community-stat-row > div { padding: 12px 8px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.community-stat-row strong, .community-stat-row span { display: block; }
+.community-stat-row strong { font-size: .95rem; color: var(--primary); }
+.community-stat-row span { margin-top: 2px; color: var(--text-muted); font-size: .68rem; }
+
+.community-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
 .community-feed-column { min-width: 0; }
 .community-feed-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin: 4px 0 12px; }
 .community-feed-head h2 { margin: 4px 0 0; font-size: 1.35rem; }
@@ -16,7 +40,7 @@
 .community-notice p { margin: 2px 0 0; color: var(--text-muted); font-size: .78rem; line-height: 1.5; }
 .community-notice > a { margin-left: auto; flex: 0 0 auto; }
 
-.community-sidebar { display: grid; gap: 28px; position: sticky; top: 88px; }
+.community-sidebar { display: grid; gap: 16px; position: sticky; top: 88px; }
 .community-side-card { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .side-card-heading { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 15px; }
 .side-card-heading h3 { margin: 4px 0 0; font-size: 1rem; }
@@ -84,12 +108,17 @@
 }
 @media (max-width: 767px) {
     .community-page { padding-top: 0; padding-bottom: 26px; }
-    .community-sidebar { grid-template-columns: 1fr; gap: 22px; }
+    .community-hero { grid-template-columns: 1fr; padding: 22px 18px; border-radius: var(--radius); gap: 18px; }
+    .community-hero h1 { font-size: 1.85rem; }
+    .community-hero-actions .btn { flex: 1 1 auto; }
+    .community-stat-main strong { font-size: 2.1rem; }
+    .community-sidebar { grid-template-columns: 1fr; }
     .community-notice { align-items: flex-start; flex-wrap: wrap; }
     .community-notice > a { margin-left: 52px; }
     .hl-media { max-height: 360px; }
 }
 @media (max-width: 575px) {
+    .community-hero { margin-left: -6px; margin-right: -6px; border-left: 0; border-right: 0; border-radius: 0; }
     .community-feed-head h2 { font-size: 1.15rem; }
     .hl-card-head { padding: 13px 12px 10px; }
     .hl-product { margin-left: 12px; margin-right: 12px; }
