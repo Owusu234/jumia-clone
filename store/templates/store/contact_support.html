@@ -1,0 +1,35 @@
+{% extends "store/base.html" %}
+{% block title %}Contact Support | ShopVibe{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <h3 class="fw-bold mb-3 text-center">💬 Contact Support</h3>
+                    <p class="text-muted text-center mb-4">
+                        Have a question about your account, a seller application, or an order?
+                        Reach out and we'll get back to you.
+                    </p>
+
+                    {% if support_email %}
+                    <div class="text-center mb-4">
+                        <a href="mailto:{{ support_email }}" class="btn btn-primary">
+                            <i class="bi bi-envelope me-1"></i> Email {{ support_email }}
+                        </a>
+                    </div>
+                    {% else %}
+                    <p class="text-center text-muted">
+                        Support contact details aren't configured yet — please check back soon.
+                    </p>
+                    {% endif %}
+
+                    <p class="text-center text-muted small mb-0">
+                        <a href="{% url 'store:profile' %}" class="text-decoration-none">&larr; Back to profile</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

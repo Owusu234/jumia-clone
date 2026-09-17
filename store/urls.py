@@ -13,7 +13,8 @@ urlpatterns = [
     path("product/<slug:slug>/", views.product_detail, name="product_detail"),
     path("seller/<int:seller_id>/", views.seller_store, name="seller_store"),
     path("seller/<int:seller_id>/follow/", views.toggle_follow, name="toggle_follow"),
-    # path("complete-profile/", views.complete_profile, name="complete_profile"),
+    path("complete-profile/", views.complete_profile, name="complete_profile"),
+    path("support/", views.contact_support, name="contact_support"),
     path("api/regions/", views.get_regions_by_country, name="api_regions"),
     path("api/save-delivery-info/", views.save_delivery_info, name="save_delivery_info"),
     path('admin/notifications/read/', views.mark_notifications_read, name='mark_notifications_read'),
@@ -93,6 +94,8 @@ urlpatterns = [
     path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/add-user/", views.admin_add_user, name="admin_add_user"),
     path("admin/remove-user/<int:user_id>/", views.admin_remove_user, name="admin_remove_user"),
+    # Alias: superuser_dashboard.html links to this name specifically.
+    path("admin/delete-user/<int:user_id>/", views.admin_remove_user, name="delete_user"),
     path("admin/update-price/<int:product_id>/", views.admin_update_price, name="admin_update_price"),
 
     # Admin Analytics & Orders

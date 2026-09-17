@@ -2790,41 +2790,52 @@ def update_order_status(req, order_id):
     if req.user.is_superuser:
         return redirect("store:admin_orders")
     return redirect("store:seller_dashboard")
-# store/views.py
+@login_required
+def complete_profile(req):
+    """Handle profile completion for new users"""
+    profile, _ = UserProfile.objects.get_or_create(user=req.user)
 
-# @login_required
-# def complete_profile(req):
-#     """Handle profile completion for new users"""
-#     profile, _ = UserProfile.objects.get_or_create(user=req.user)
-    
-#     if req.method == "POST":
-#         # ✅ Handle text-based country field
-#         country = req.POST.get("country", "").strip()
-#         whatsapp = req.POST.get("whatsapp_number", "").strip()
-        
-#         if country:
-#             profile.country = country
-#         if whatsapp:
-#             profile.whatsapp_number = whatsapp
-            
-#         profile.save(update_fields=["country", "whatsapp_number"])
-        
-#         # Sync to Supabase if needed
-#         update_supabase_prof(req.user.id, {
-#             "country": country,
-#             "whatsapp_number": whatsapp
-#         })
-        
-#         messages.success(req, "✅ Profile completed!")
-        
-#         # Redirect to intended page or home
-#         next_url = req.GET.get("next", "store:home")
-#         return redirect(next_url)
-    
-#     return render(req, "store/complete_profile.html", {
-#         "profile": profile,
-#         "next": req.GET.get("next", "store:home")
-#     })
+    if req.method == "POST":
+        # ✅ Handle text-based country field
+        country = req.POST.get("country", "").strip()
+        whatsapp = req.POST.get("whatsapp_number", "").strip()
+
+        if country:
+            profile.country = country
+        if whatsapp:
+            profile.whatsapp_number = whatsapp
+
+        profile.save(update_fields=["country", "whatsapp_number"])
+
+        # Sync to Supabase if needed
+        try:
+            update_supabase_prof(req.user.id, {
+                "country": country,
+                "whatsapp_number": whatsapp
+            })
+        except Exception:
+            # Don't block profile completion on a Supabase sync hiccup
+            pass
+
+        messages.success(req, "✅ Profile completed!")
+
+        # Redirect to intended page or home
+        next_url = req.POST.get("next") or req.GET.get("next") or "store:home"
+        return redirect(next_url)
+
+    return render(req, "store/complete_profile.html", {
+        "profile": profile,
+        "next": req.GET.get("next", "store:home")
+    })
+
+
+def contact_support(req):
+    """Simple support-contact page. Linked from profile.html for sellers
+    whose application was rejected, and available to anyone else."""
+    support_email = getattr(settings, "ADMIN_EMAIL", None) or getattr(settings, "DEFAULT_FROM_EMAIL", None)
+    return render(req, "store/contact_support.html", {
+        "support_email": support_email,
+    })
 
 
 def get_regions_by_country(req):
