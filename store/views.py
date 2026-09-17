@@ -4021,6 +4021,8 @@ def _chat_message_payload(msg, viewer):
         'mine': bool(msg.sender_id and msg.sender_id == viewer.id),
         'sender': msg.sender.username if msg.sender else 'System',
         'created_at': timezone.localtime(msg.created_at).strftime('%d %b, %H:%M'),
+        # Sent = one tick; viewed by the other participant = two ticks.
+        'is_read': bool(msg.is_read),
         'invoice': {
             'id': invoice.id,
             'product': invoice.product.name,
@@ -4113,9 +4115,16 @@ def chat_messages(req, conversation_id):
         qs = qs.filter(id__gt=after)
     payload = [_chat_message_payload(m, req.user) for m in qs]
     conv.messages.filter(is_read=False).exclude(sender_id=req.user.id).update(is_read=True)
+
+    # Also tell the sender which of their existing messages have now been viewed.
+    read_ids = list(
+        conv.messages.filter(sender_id=req.user.id, is_read=True)
+        .values_list('id', flat=True)
+    )
     return JsonResponse({
         'success': True,
         'messages': payload,
+        'read_ids': read_ids,
         'has_location': conv.has_location,
     })
 

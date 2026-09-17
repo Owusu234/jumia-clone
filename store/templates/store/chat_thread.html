@@ -231,6 +231,14 @@
     const time = document.createElement('small');
     time.className = 'chat-message-time';
     time.textContent = message.created_at || '';
+    if (message.mine && !message.deleted) {
+      const ticks = document.createElement('span');
+      ticks.className = 'chat-message-ticks' + (message.is_read ? ' is-read' : '');
+      ticks.dataset.readStatus = message.is_read ? 'read' : 'sent';
+      ticks.setAttribute('aria-label', message.is_read ? 'Viewed' : 'Sent');
+      ticks.textContent = message.is_read ? '✓✓' : '✓';
+      time.appendChild(ticks);
+    }
     bubble.appendChild(time);
     const del = document.createElement('button');
     del.type = 'button';
@@ -400,7 +408,20 @@
     fetch(`/chat/${CONV}/messages/?after=${lastId}`, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
       .then(r => r.json())
       .then(d => {
-        if (!d.success || !d.messages.length) return;
+        if (!d.success) return;
+
+        // A recipient viewing a message changes is_read without creating a new message.
+        (d.read_ids || []).forEach(function (id) {
+          const row = box.querySelector(`[data-message-id="${id}"]`);
+          const ticks = row && row.querySelector('.chat-message-ticks');
+          if (ticks) {
+            ticks.textContent = '✓✓';
+            ticks.classList.add('is-read');
+            ticks.dataset.readStatus = 'read';
+            ticks.setAttribute('aria-label', 'Viewed');
+          }
+        });
+
         d.messages.forEach(message => {
           // Ignore messages already rendered locally.
           if (Number(message.id) <= lastId) return;
