@@ -118,7 +118,7 @@
             <h1 class="fw-bold mb-2">{{ product.name }}</h1>
             <p class="text-muted mb-3">
                 <i class="bi bi-shop me-1"></i>
-                <a href="#" class="text-decoration-none">{{ product.seller.store_name }}</a>
+                <a href="{% url 'store:seller_store' product.seller.id %}" class="text-decoration-none">{{ product.seller.store_name }}</a>
             </p>
             
             <div class="d-flex align-items-center gap-3 mb-3">
@@ -857,6 +857,9 @@ function tryAR() {
   .chat-invoice { align-self: stretch; border: 1px solid rgba(0,0,0,.15); border-radius: 12px;
     padding: .8rem; background: var(--card, #fff); }
   .seller-chat-compose { display: flex; gap: .5rem; padding: .75rem 1rem 0; }
+  @media (max-width: 576px) {
+    .seller-chat-panel { width: 100vw; border-left: none; }
+  }
 </style>
 
 <script>
@@ -940,7 +943,6 @@ function tryAR() {
       return refresh();
     }).then(() => {
       if (!poller) poller = setInterval(refresh, 7000);
-      if (!hasLocation) shareChatLocation();
     });
   };
 
@@ -994,7 +996,6 @@ function tryAR() {
       if (data.success) { input.value = ''; render(data.message); return; }
       if (data.code === 'location_required') {
         el('chatLocationBar').classList.remove('d-none');
-        shareChatLocation();
       }
       alert(data.error || 'Message not sent.');
     }).catch(() => { el('chatSendBtn').disabled = false; });

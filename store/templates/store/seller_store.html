@@ -1,0 +1,69 @@
+{% extends 'store/base.html' %}
+{% block title %}{{ seller.store_name }} | ShopVibe{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 1000px;">
+  <div class="card border-theme bg-card p-3 p-md-4 mb-4">
+    <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+      <div>
+        <h4 class="fw-bold mb-1"><i class="bi bi-shop me-2"></i>{{ seller.store_name }}</h4>
+        {% if seller.description %}<p class="text-muted mb-2">{{ seller.description }}</p>{% endif %}
+        <small class="text-muted d-block">
+          <i class="bi bi-geo-alt me-1"></i>{{ seller.region|default:"Ghana" }}
+          · <span id="followerCount">{{ follower_count }}</span> follower{{ follower_count|pluralize }}
+          · {{ product_count }} product{{ product_count|pluralize }}
+        </small>
+      </div>
+      <button id="followBtn"
+              class="btn {% if is_following %}btn-outline-secondary{% else %}btn-primary{% endif %}"
+              onclick="toggleFollow(this)">
+        {% if is_following %}<i class="bi bi-check2 me-1"></i>Following{% else %}<i class="bi bi-plus me-1"></i>Follow{% endif %}
+      </button>
+    </div>
+  </div>
+  <h6 class="fw-bold mb-3">Products from {{ seller.store_name }}</h6>
+  {% if products %}
+  <div class="row g-3">
+    {% for p in products %}
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="product-card">
+        <a href="{% url 'store:product_detail' p.slug %}" class="d-block">
+          <img src="{{ p.get_image }}" class="product-img" alt="{{ p.name }}" loading="lazy"
+               onerror="this.src='https://via.placeholder.com/400?text=No+Image'"
+               style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;">
+        </a>
+        <div class="pt-2">
+          <a href="{% url 'store:product_detail' p.slug %}" class="text-decoration-none">
+            <h6 class="mb-1" style="font-size:.95rem;">{{ p.name|truncatechars:30 }}</h6>
+          </a>
+          <span class="fw-bold">GH₵{{ p.price }}</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-muted">This store has no products yet.</p>
+  {% endif %}
+</div>
+<script>
+function toggleFollow(btn) {
+  {% if not user.is_authenticated %}
+    window.location.href = "{% url 'store:login' %}";
+    return;
+  {% endif %}
+  btn.disabled = true;
+  fetch("{% url 'store:toggle_follow' seller.id %}", {
+    method: 'POST',
+    headers: {'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest'}
+  }).then(r => r.json()).then(data => {
+    btn.disabled = false;
+    if (!data.success) { alert(data.error || 'Could not update follow.'); return; }
+    document.getElementById('followerCount').textContent = data.followers;
+    btn.className = data.following ? 'btn btn-outline-secondary' : 'btn btn-primary';
+    btn.innerHTML = data.following
+      ? '<i class="bi bi-check2 me-1"></i>Following'
+      : '<i class="bi bi-plus me-1"></i>Follow';
+  }).catch(() => { btn.disabled = false; });
+}
+</script>
+{% endblock %}

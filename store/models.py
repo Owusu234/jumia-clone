@@ -1121,3 +1121,17 @@ class Invoice(models.Model):
         self.paid_at = timezone.now()
         self.order = order
         self.save(update_fields=['status', 'paid_at', 'order'])
+
+
+class SellerFollow(models.Model):
+    """A buyer following a seller's store."""
+    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='seller_follows')
+    seller = models.ForeignKey(SellerProfile, on_delete=models.CASCADE, related_name='followers')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('buyer', 'seller')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.buyer.username} → {self.seller.store_name}'

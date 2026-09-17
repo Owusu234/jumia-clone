@@ -1,7 +1,29 @@
 {% extends 'store/base.html' %}
 {% block title %}Chat · {{ product.name }} | ShopVibe{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width: 820px;">
+<style>
+@media (max-width: 576px) {
+  body { overflow: hidden; }
+  .chat-thread-wrap {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding-top: .75rem !important;
+    padding-bottom: .75rem !important;
+  }
+  .chat-thread-wrap > .d-flex.justify-content-between { flex: 0 0 auto; }
+  #threadCard {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+  }
+  #threadCard form { flex: 0 0 auto; }
+  #threadMessages { flex: 1 1 auto; max-height: none; }
+}
+</style>
+<div class="container py-4 chat-thread-wrap" style="max-width: 820px;">
 
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
@@ -94,7 +116,7 @@
     {% endif %}
   {% endif %}
 
-  <div class="card border-theme bg-card p-3">
+  <div class="card border-theme bg-card p-3" id="threadCard">
     <div id="threadMessages" style="max-height: 55vh; overflow-y: auto; display:flex; flex-direction:column; gap:.6rem;">
       {% for msg in chat_messages %}
         {% if msg.invoice %}

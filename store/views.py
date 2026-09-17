@@ -398,42 +398,36 @@ def oauth_callback(req): return redirect("store:home")
 # ==================== STOREFRONT ====================
 
 def home(req):
-    # 1️⃣ Get filter params
     q = req.GET.get("q", "").strip()
     cat_slug = req.GET.get("category")
     price_min = req.GET.get("price_min")
     price_max = req.GET.get("price_max")
-    sort = req.GET.get("sort", "newest")  # Default to newest
-    
-    # 2️⃣ Base querysets
+    sort = req.GET.get("sort", "newest")
+
     categories = Category.objects.all().order_by('name')
-    prods = Product.objects.filter(is_active=True, stock__gt=0)  # Only in-stock items
-    
-    # 3️⃣ Search Filter
+    prods = Product.objects.filter(is_active=True, stock__gt=0)
+
     if q:
         prods = prods.filter(
-            Q(name__icontains=q) | 
-            Q(description__icontains=q) | 
+            Q(name__icontains=q) |
+            Q(description__icontains=q) |
             Q(category__name__icontains=q)
         )
-    
-    # 4️⃣ Category Filter
+
     if cat_slug:
         prods = prods.filter(category__slug=cat_slug)
-    
-    # 5️⃣ 💰 Price Filter (NEW)
+
     if price_min:
         try:
             prods = prods.filter(price__gte=float(price_min))
         except (ValueError, TypeError):
-            pass  # Ignore invalid input
+            pass
     if price_max:
         try:
             prods = prods.filter(price__lte=float(price_max))
         except (ValueError, TypeError):
             pass
-    
-    # 6️⃣ 📊 Sorting (NEW)
+
     if sort == "price_asc":
         prods = prods.order_by("price", "-created_at")
     elif sort == "price_desc":
@@ -442,28 +436,33 @@ def home(req):
         prods = prods.order_by("name", "-created_at")
     elif sort == "name_desc":
         prods = prods.order_by("-name", "-created_at")
-    else:  # "newest" or default
+    else:
         prods = prods.order_by("-created_at")
-    
-    # 7️⃣ Pagination
-    paginator = Paginator(prods, 24)  # 24 products per page
-    page_number = req.GET.get("page")
-    products = paginator.get_page(page_number)
-    
-    # 8️⃣ Cart count (if using session)
+
+    paginator = Paginator(prods, 24)
+    products = paginator.get_page(req.GET.get("page"))
     cart_count = len(req.session.get('cart', {})) if req.session else 0
-    
+
+    followed_updates = []
+    if req.user.is_authenticated:
+        followed_ids = list(
+            SellerFollow.objects.filter(buyer=req.user).values_list('seller_id', flat=True)
+        )
+        if followed_ids:
+            followed_updates = list(
+                Product.objects.filter(seller_id__in=followed_ids, is_active=True)
+                .select_related('seller')
+                .order_by('-created_at')[:12]
+            )
+
     return render(req, "store/home.html", {
         "products": products,
         "categories": categories,
         "cart_count": cart_count,
-        # Optional: Pass current filters for template display
+        "followed_updates": followed_updates,
         "current_filters": {
-            "q": q,
-            "category": cat_slug,
-            "price_min": price_min,
-            "price_max": price_max,
-            "sort": sort,
+            "q": q, "category": cat_slug, "price_min": price_min,
+            "price_max": price_max, "sort": sort,
         }
     })
 
@@ -3423,6 +3422,7 @@ def seller_application_detail(request, seller_id):
 from .models import (
     CommunityHighlight, HighlightEngagement, HighlightComment,
     DiscountVoucher, SellerHighlightGoal,
+    SellerFollow,
 )
 
 HIGHLIGHT_MEDIA_BUCKET = "review"
@@ -3948,6 +3948,40 @@ def _consume_applied_voucher(req, order):
             voucher.mark_used(order)
     except Exception as exc:
         logging.exception('Voucher redemption bookkeeping failed: %s', exc)
+
+
+# ==================== SELLER STOREFRONT & FOLLOWING ====================
+
+def seller_store(req, seller_id):
+    seller = get_object_or_404(
+        SellerProfile.objects.select_related('user'), id=seller_id)
+    products = (Product.objects
+                .filter(seller=seller, is_active=True)
+                .select_related('category')
+                .order_by('-created_at'))
+    is_following = (req.user.is_authenticated and
+                    SellerFollow.objects.filter(buyer=req.user, seller=seller).exists())
+    return render(req, 'store/seller_store.html', {
+        'seller': seller,
+        'products': products,
+        'is_following': is_following,
+        'follower_count': seller.followers.count(),
+        'product_count': products.count(),
+    })
+
+
+@login_required
+@require_POST
+def toggle_follow(req, seller_id):
+    seller = get_object_or_404(SellerProfile, id=seller_id)
+    if seller.user_id == req.user.id:
+        return JsonResponse({'success': False,
+                             'error': 'You cannot follow your own store.'}, status=400)
+    follow, created = SellerFollow.objects.get_or_create(buyer=req.user, seller=seller)
+    if not created:
+        follow.delete()
+    return JsonResponse({'success': True, 'following': created,
+                         'followers': seller.followers.count()})
 
 
 # ==================== IN-SITE BUYER ↔ SELLER CHAT ====================
