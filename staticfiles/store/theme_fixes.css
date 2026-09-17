@@ -1,3 +1,18 @@
+
+/* GLOBAL MOBILE/VIEWPORT FIX: pages must scroll vertically only.
+   Horizontal overflow from wide children, fixed panels, grids, or
+   viewport-width elements must never expand the document itself.
+   Intentional nested horizontal scrollers (e.g. product carousels)
+   remain independently scrollable. */
+html, body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.layout-wrapper, main {
+  min-width: 0;
+  max-width: 100%;
+}
 /* ════════════════════════════════════════════════════════════════
    ShopVibe — theme_fixes.css
    Load AFTER theme.css (one extra <link> in base.html).
