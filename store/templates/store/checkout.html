@@ -106,6 +106,15 @@
     <div class="row g-4">
         <!-- Order Summary -->
         <div class="col-lg-8">
+            {% if invoice %}
+            <div class="checkout-card mb-3" style="border: 1px solid var(--p, #0d6efd);">
+                <h6 class="fw-bold mb-1"><i class="bi bi-receipt me-1"></i>Paying invoice #{{ invoice.id }}</h6>
+                <p class="small text-muted mb-0">
+                    This is the price you agreed with {{ invoice.seller.store_name }} in chat, plus the delivery
+                    fee based on your shared location — not the listed price.
+                </p>
+            </div>
+            {% endif %}
             <div class="checkout-card">
                 <h5 class="fw-bold mb-3">📦 Order Items</h5>
                 {% for item in items %}
@@ -117,7 +126,7 @@
                              alt="{{ item.product.name }}">
                         <div>
                             <h6 class="fw-bold mb-1">{{ item.product.name }}</h6>
-                            <small class="text-muted">Qty: {{ item.qty }} × GH₵{{ item.product.price }}</small>
+                            <small class="text-muted">Qty: {{ item.qty }} × GH₵{{ item.unit_price|default:item.product.price }}</small>
                             {% if item.color %}<small class="text-muted d-block">Color: {{ item.color }}</small>{% endif %}
                             {% if item.size %}<small class="text-muted d-block">Size: {{ item.size }}</small>{% endif %}
                         </div>
@@ -136,15 +145,19 @@
                 <h5 class="fw-bold mb-3">💳 Payment Summary</h5>
                 <div class="d-flex justify-content-between mb-2">
                     <span class="text-muted">Subtotal</span>
-                    <span>GH₵{{ total|floatformat:2 }}</span>
+                    <span>GH₵{{ subtotal|default:total|floatformat:2 }}</span>
                 </div>
                 <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">Shipping</span>
-                    <span class="text-success">Free</span>
+                    <span class="text-muted">Delivery</span>
+                    {% if delivery_fee %}
+                        <span>GH₵{{ delivery_fee|floatformat:2 }}</span>
+                    {% else %}
+                        <span class="text-success">Free</span>
+                    {% endif %}
                 </div>
 
                 <!-- Community Highlights voucher -->
-                {% if user.is_authenticated %}
+                {% if user.is_authenticated and not invoice %}
                 <div class="d-flex justify-content-between mb-2" id="voucherRow" style="display:none !important;">
                     <span class="text-muted">
                         Voucher <code class="small" id="voucherCodeLabel"></code>

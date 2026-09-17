@@ -16,7 +16,7 @@ from django.utils.text import slugify
 from django.contrib.auth import login as django_login, logout as django_logout
 from django.conf import settings
 from django.urls import reverse
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 from django.template.loader import render_to_string
 from supabase import create_client
 from paystackapi.paystack import Paystack
@@ -39,6 +39,7 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
 from .models import Product, Category, Cart, CartItem, SharedCartLink, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
+from .models import Conversation, ChatMessage, Invoice
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
 from django.core.files.base import ContentFile
 from django.http import JsonResponse
@@ -610,43 +611,11 @@ Pick at most 5 product_ids, ranked best match first."""
     return JsonResponse({"reply": reply_text, "products": products_json})
 
 
-@login_required
-def product_detail(req, slug):
-    product = get_object_or_404(Product, slug=slug, is_active=True)
-    seller = product.seller
-    seller_whatsapp = None
+# NOTE: an earlier duplicate `product_detail` view (WhatsApp-based) lived here.
+# Django uses the last definition of a name in a module, so that copy was
+# always dead code — removed rather than left to bit-rot. The live
+# implementation, further down, no longer exposes any WhatsApp number.
 
-    if seller and seller.user:
-        # 1️⃣ Fetch directly from Supabase Auth metadata
-        raw_whatsapp = fetch_whatsapp_from_supabase(str(seller.user.id))
-        
-        # 2️⃣ Clean for wa.me link (remove +, spaces, dashes, leading 0)
-        if raw_whatsapp:
-            seller_whatsapp = re.sub(r'[^\d]', '', str(raw_whatsapp))
-            if seller_whatsapp.startswith('0'):
-                seller_whatsapp = seller_whatsapp[1:]
-
-    # Handle Reviews
-    if req.method == "POST":
-        rating = req.POST.get("rating")
-        comment = req.POST.get("comment", "").strip()
-        if rating and rating.isdigit():
-            Review.objects.update_or_create(
-                user=req.user, product=product,
-                defaults={"rating": int(rating), "comment": comment}
-            )
-            messages.success(req, "✅ Review submitted!")
-            return redirect("store:product_detail", slug=slug)
-
-    similar_products = Product.objects.filter(
-        category=product.category, is_active=True, stock__gt=0
-    ).exclude(id=product.id).order_by("-created_at")[:4]
-
-    return render(req, "store/product_detail.html", {
-        "product": product,
-        "seller_whatsapp": seller_whatsapp,  # ✅ Clean number ready for wa.me
-        "similar_products": similar_products
-    })
 
 @login_required
 def submit_review(req, product_id):
@@ -1374,7 +1343,34 @@ logger = logging.getLogger(__name__)
 @guest_or_login_required
 def checkout(req):
     """Display checkout page with Paystack integration"""
-    
+
+    # An invoice checkout is priced by the seller's agreed figures, not by the
+    # product's listed price.
+    invoice = _active_invoice(req)
+    if invoice:
+        items = [{
+            'product': invoice.product,
+            'qty': invoice.quantity,
+            'color': invoice.color,
+            'size': invoice.size,
+            'unit_price': invoice.unit_price,
+            'subtotal': invoice.items_total,
+        }]
+        return render(req, "store/checkout.html", {
+            "items": items,
+            "subtotal": invoice.items_total,
+            "delivery_fee": invoice.delivery_fee,
+            "total": invoice.total,
+            "total_kobo": int(invoice.total * 100),
+            "paystack_public_key": settings.PAYSTACK_PUBLIC_KEY,
+            "cart_count": 1,
+            "cart_json": json.dumps({}),
+            "site_url": settings.SITE_URL,
+            "shared_purchase": None,
+            "gift_recipient": None,
+            "invoice": invoice,
+        })
+
     cart_data = req.session.get('cart', {})
     
     if not isinstance(cart_data, dict):
@@ -1465,6 +1461,9 @@ def checkout(req):
     return render(req, "store/checkout.html", {
         "items": items,
         "total": total,
+        "subtotal": total,
+        "delivery_fee": Decimal('0.00'),
+        "invoice": None,
         "total_kobo": total_kobo,
         "paystack_public_key": settings.PAYSTACK_PUBLIC_KEY,
         "cart_count": len(items),
@@ -1497,38 +1496,47 @@ def initialize_paystack_payment(req):
                 return JsonResponse({'error': 'Please enter a valid email address to continue.'}, status=400)
 
         # 1️⃣ Validate cart exists and has items
+        invoice = _active_invoice(req)
         cart_data = req.session.get('cart', {})
-        if not cart_data or not isinstance(cart_data, dict):
+        if not invoice and (not cart_data or not isinstance(cart_data, dict)):
             return JsonResponse({'error': 'Cart is empty or invalid'}, status=400)
-        
+
         # 2️⃣ Calculate total amount safely (handle nested dict cart format)
         total = Decimal('0')
         valid_items = 0
-        
-        with transaction.atomic():
-            for pid, item in cart_data.items():
-                try:
-                    # Extract quantity (handle both simple and nested dict formats)
-                    if isinstance(item, dict):
-                        qty = item.get('quantity', 1)
-                        # Handle deeply nested dicts (defensive programming)
-                        while isinstance(qty, dict):
-                            qty = qty.get('quantity', 1)
-                        qty = max(1, int(float(qty)))
-                    else:
-                        qty = max(1, int(float(item)))
+
+        if invoice:
+            # The negotiated price wins over the listed price, and the agreed
+            # delivery fee is charged on top.
+            if invoice.product.stock < invoice.quantity:
+                return JsonResponse({'error': 'This item is no longer in stock.'}, status=400)
+            total = invoice.total
+            valid_items = 1
+        else:
+            with transaction.atomic():
+                for pid, item in cart_data.items():
+                    try:
+                        # Extract quantity (handle both simple and nested dict formats)
+                        if isinstance(item, dict):
+                            qty = item.get('quantity', 1)
+                            # Handle deeply nested dicts (defensive programming)
+                            while isinstance(qty, dict):
+                                qty = qty.get('quantity', 1)
+                            qty = max(1, int(float(qty)))
+                        else:
+                            qty = max(1, int(float(item)))
                     
-                    # Fetch product and validate
-                    product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
-                    total += product.price * Decimal(qty)
-                    valid_items += 1
+                        # Fetch product and validate
+                        product = Product.objects.select_for_update().get(id=int(_parse_cart_key(pid)[0]), is_active=True)
+                        total += product.price * Decimal(qty)
+                        valid_items += 1
                     
-                except Product.DoesNotExist:
-                    logger.warning(f"Product {pid} not found or inactive, skipping")
-                    continue
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Invalid quantity for product {pid}: {e}")
-                    continue
+                    except Product.DoesNotExist:
+                        logger.warning(f"Product {pid} not found or inactive, skipping")
+                        continue
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Invalid quantity for product {pid}: {e}")
+                        continue
         
         # Validate we have valid items and positive total
         if valid_items == 0 or total <= 0:
@@ -1575,6 +1583,8 @@ def initialize_paystack_payment(req):
                 'recipient_user_id': gift_recipient.id if gift_recipient else req.user.id,
                 'recipient_username': gift_recipient.username if gift_recipient else req.user.username,
                 'purchase_type': 'gift' if gift_recipient else 'self',
+                'invoice_id': invoice.id if invoice else None,
+                'delivery_fee_ghs': str(invoice.delivery_fee) if invoice else '0.00',
             },
             'currency': 'GHS',  # ✅ Explicitly set currency for Ghana
         }
@@ -1737,6 +1747,19 @@ def paystack_callback(req):
                 paystack_response=paystack_data,
                 customer_email=paystack_data.get('customer', {}).get('email', getattr(req.user, 'email', '')),
             )
+
+            # An invoice purchase is priced by the seller's quote, so it does
+            # not go through the cart pricing below.
+            invoice = _active_invoice(req)
+            if invoice:
+                _record_invoice_order(req, order, invoice, paid_amount_ghs)
+                req.session['cart'] = {}
+                req.session.pop('invoice_checkout', None)
+                req.session.pop('paystack_ref', None)
+                req.session.pop('paystack_amount', None)
+                req.session.modified = True
+                return JsonResponse({'success': True, 'order_id': order.id,
+                                     'message': 'Payment successful'})
 
             # Burn the Community Highlights voucher, if one was applied.
             _consume_applied_voucher(req, order)
@@ -1922,7 +1945,13 @@ def verify_paystack_payment(req):
             total_calculated = Decimal('0')
             items_processed = 0
 
-            for pid, item in cart_data.items():
+            # An invoice purchase uses the agreed price and delivery fee, so
+            # it skips the cart pricing loop entirely.
+            paid_invoice = _active_invoice(req)
+            if paid_invoice:
+                _record_invoice_order(req, order, paid_invoice, paid_amount_ghs)
+
+            for pid, item in ({} if paid_invoice else cart_data).items():
                 try:
                     if isinstance(item, dict):
                         qty = item.get('quantity', 1)
@@ -1964,11 +1993,12 @@ def verify_paystack_payment(req):
                     logger.error(f"Product {pid} not found during processing")
                     continue
 
-            if items_processed > 0:
+            if items_processed > 0 and not paid_invoice:
                 order.total_amount = total_calculated
                 order.save(update_fields=['total_amount'])
 
-        # Clear cart
+        req.session.pop('invoice_checkout', None)
+
         for pid in cart_data.keys():
             try:
                 product = Product.objects.get(id=int(_parse_cart_key(pid)[0]))
@@ -2826,17 +2856,11 @@ def save_delivery_info(req):
 def product_detail(req, slug):
     product = get_object_or_404(Product, slug=slug, is_active=True)
     seller_prof = get_supabase_prof(product.seller.user_id) if product.seller else None
-    whatsapp_raw = None
-    if seller_prof: whatsapp_raw = seller_prof.get('whatsapp') or seller_prof.get('phone')
-    if not whatsapp_raw and product.seller:
-        seller_obj = getattr(product.seller, 'seller_profile', None) or product.seller
-        whatsapp_raw = getattr(seller_obj, 'whatsapp', None) or getattr(seller_obj, 'phone', None)
-    whatsapp_api_id = whatsapp_display = None
-    if whatsapp_raw:
-        clean_digits = re.sub(r'[^\d]', '', str(whatsapp_raw))
-        if clean_digits:
-            if not clean_digits.startswith('233'): clean_digits = '233' + clean_digits.lstrip('0')
-            whatsapp_api_id, whatsapp_display = clean_digits, f'+{clean_digits}'
+    # Buyers now talk to sellers in-site rather than being handed off to
+    # WhatsApp, so no phone number is exposed on this page.
+    conversation = None
+    if req.user.is_authenticated and product.seller:
+        conversation = Conversation.objects.filter(product=product, buyer=req.user).first()
     related_products = Product.objects.filter(category=product.category, is_active=True, stock__gt=0).exclude(id=product.id).order_by('-created_at')[:4]
     reviews = Review.objects.filter(product=product).filter(Q(is_approved=True) | Q(user=req.user)).select_related('user').order_by('-created_at')
 
@@ -2888,7 +2912,7 @@ def product_detail(req, slug):
                 messages.error(req, 'The review photo could not be processed. Please upload a valid image.'); return redirect('store:product_detail', slug=slug)
         messages.success(req, '✅ Review submitted!'); return redirect('store:product_detail', slug=slug)
 
-    return render(req, 'store/product_detail.html', {'product': product, 'seller_prof': seller_prof, 'related_products': related_products, 'reviews': reviews, 'whatsapp_number': whatsapp_api_id, 'whatsapp_display': whatsapp_display, 'whatsapp_available': bool(whatsapp_api_id), 'seller_name': seller_prof.get('store_name') if seller_prof else getattr(product.seller, 'store_name', 'Seller')})
+    return render(req, 'store/product_detail.html', {'product': product, 'seller_prof': seller_prof, 'related_products': related_products, 'reviews': reviews, 'conversation': conversation, 'can_chat': bool(product.seller) and (not req.user.is_authenticated or product.seller.user_id != req.user.id), 'seller_name': seller_prof.get('store_name') if seller_prof else getattr(product.seller, 'store_name', 'Seller')})
 
 
 @login_required
@@ -3924,3 +3948,331 @@ def _consume_applied_voucher(req, order):
             voucher.mark_used(order)
     except Exception as exc:
         logging.exception('Voucher redemption bookkeeping failed: %s', exc)
+
+
+# ==================== IN-SITE BUYER ↔ SELLER CHAT ====================
+# Replaces the old WhatsApp hand-off. Threads are private to the two
+# participants, the buyer shares a location so the seller can quote delivery,
+# the price is negotiable, and the seller closes with an invoice that becomes
+# the amount actually charged at checkout.
+
+def _get_conversation_or_404(user, conversation_id):
+    conv = get_object_or_404(
+        Conversation.objects.select_related('product', 'buyer', 'seller', 'seller__user'),
+        id=conversation_id)
+    if not conv.is_participant(user):
+        # 404 rather than 403: a non-participant should not learn the thread exists.
+        raise Http404('Conversation not found.')
+    return conv
+
+
+def _chat_message_payload(msg, viewer):
+    invoice = msg.invoice
+    return {
+        'id': msg.id,
+        'kind': msg.kind,
+        'body': msg.body,
+        'mine': bool(msg.sender_id and msg.sender_id == viewer.id),
+        'sender': msg.sender.username if msg.sender else 'System',
+        'created_at': timezone.localtime(msg.created_at).strftime('%d %b, %H:%M'),
+        'invoice': {
+            'id': invoice.id,
+            'product': invoice.product.name,
+            'quantity': invoice.quantity,
+            'unit_price': str(invoice.unit_price),
+            'items_total': str(invoice.items_total),
+            'delivery_fee': str(invoice.delivery_fee),
+            'total': str(invoice.total),
+            'note': invoice.note,
+            'status': invoice.status,
+            'is_payable': invoice.is_payable,
+            'pay_url': reverse('store:pay_invoice', args=[invoice.id]),
+        } if invoice else None,
+    }
+
+
+def _notify(user_id, title, message, link):
+    try:
+        UserNotification.objects.create(user_id=user_id, title=title, message=message, link=link)
+    except Exception:
+        logging.getLogger(__name__).exception('Chat notification failed')
+
+
+@login_required
+def start_conversation(req, product_id):
+    """Open (or reopen) the buyer's thread with this product's seller."""
+    product = get_object_or_404(Product.objects.select_related('seller', 'seller__user'),
+                                id=product_id, is_active=True)
+    if not product.seller:
+        messages.error(req, 'This product has no seller to chat with.')
+        return redirect('store:product_detail', slug=product.slug)
+    if product.seller.user_id == req.user.id:
+        messages.info(req, 'This is your own product.')
+        return redirect('store:product_detail', slug=product.slug)
+
+    conv, _ = Conversation.objects.get_or_create(
+        product=product, buyer=req.user, defaults={'seller': product.seller})
+    if req.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse({'success': True, 'conversation_id': conv.id,
+                             'has_location': conv.has_location,
+                             'url': reverse('store:chat_thread', args=[conv.id])})
+    return redirect('store:chat_thread', conversation_id=conv.id)
+
+
+@login_required
+def chat_inbox(req):
+    """All threads this user takes part in — as buyer, as seller, or both."""
+    convs = Conversation.objects.filter(
+        Q(buyer=req.user) | Q(seller__user=req.user)
+    ).select_related('product', 'buyer', 'seller').distinct()
+
+    threads = []
+    for conv in convs:
+        threads.append({
+            'conversation': conv,
+            'is_seller_side': conv.seller.user_id == req.user.id,
+            'counterparty': conv.other_party(req.user),
+            'last_message': conv.messages.last(),
+            'unread': conv.unread_count_for(req.user),
+        })
+    return render(req, 'store/chat_inbox.html', {'threads': threads})
+
+
+@login_required
+def chat_thread(req, conversation_id):
+    conv = _get_conversation_or_404(req.user, conversation_id)
+    is_seller_side = conv.seller.user_id == req.user.id
+    conv.messages.filter(is_read=False).exclude(sender_id=req.user.id).update(is_read=True)
+    return render(req, 'store/chat_thread.html', {
+        'conversation': conv,
+        'product': conv.product,
+        'is_seller_side': is_seller_side,
+        'counterparty': conv.other_party(req.user),
+        'chat_messages': conv.messages.select_related('sender', 'invoice', 'invoice__product'),
+        'latest_invoice': conv.latest_invoice,
+        'last_message_id': conv.messages.order_by('-id').values_list('id', flat=True).first() or 0,
+    })
+
+
+@login_required
+def chat_messages(req, conversation_id):
+    """Polling endpoint: messages newer than ?after=<id>."""
+    conv = _get_conversation_or_404(req.user, conversation_id)
+    qs = conv.messages.select_related('sender', 'invoice', 'invoice__product')
+    try:
+        after = int(req.GET.get('after', 0))
+    except (TypeError, ValueError):
+        after = 0
+    if after:
+        qs = qs.filter(id__gt=after)
+    payload = [_chat_message_payload(m, req.user) for m in qs]
+    conv.messages.filter(is_read=False).exclude(sender_id=req.user.id).update(is_read=True)
+    return JsonResponse({
+        'success': True,
+        'messages': payload,
+        'has_location': conv.has_location,
+    })
+
+
+@login_required
+@require_POST
+def chat_send(req, conversation_id):
+    conv = _get_conversation_or_404(req.user, conversation_id)
+    body = (req.POST.get('body') or '').strip()
+    if not body:
+        return JsonResponse({'success': False, 'error': 'Type a message first.'}, status=400)
+    if len(body) > 2000:
+        return JsonResponse({'success': False, 'error': 'Message is too long.'}, status=400)
+
+    is_buyer = conv.buyer_id == req.user.id
+    if is_buyer and not conv.has_location:
+        # The seller quotes delivery from the buyer's location, so the buyer
+        # shares it before the conversation can start.
+        return JsonResponse({
+            'success': False,
+            'code': 'location_required',
+            'error': 'Share your location so the seller can work out your delivery fee.',
+        }, status=400)
+
+    msg = ChatMessage.objects.create(conversation=conv, sender=req.user, body=body)
+    conv.save(update_fields=['updated_at'])
+
+    recipient_id = conv.seller.user_id if is_buyer else conv.buyer_id
+    _notify(recipient_id, f'💬 New message from {req.user.username}',
+            body[:120], reverse('store:chat_thread', args=[conv.id]))
+
+    return JsonResponse({'success': True, 'message': _chat_message_payload(msg, req.user)})
+
+
+@login_required
+@require_POST
+def chat_share_location(req, conversation_id):
+    """Buyer shares their current coordinates with this seller only."""
+    conv = _get_conversation_or_404(req.user, conversation_id)
+    if conv.buyer_id != req.user.id:
+        return JsonResponse({'success': False, 'error': 'Only the buyer shares a location.'}, status=403)
+
+    try:
+        lat = Decimal(str(req.POST.get('latitude')))
+        lng = Decimal(str(req.POST.get('longitude')))
+    except (TypeError, ValueError, ArithmeticError):
+        return JsonResponse({'success': False, 'error': 'Could not read that location.'}, status=400)
+    if not (Decimal('-90') <= lat <= Decimal('90')) or not (Decimal('-180') <= lng <= Decimal('180')):
+        return JsonResponse({'success': False, 'error': 'Those coordinates are not valid.'}, status=400)
+
+    try:
+        accuracy = float(req.POST.get('accuracy') or 0) or None
+    except (TypeError, ValueError):
+        accuracy = None
+
+    conv.buyer_latitude = lat.quantize(Decimal('0.000001'))
+    conv.buyer_longitude = lng.quantize(Decimal('0.000001'))
+    conv.buyer_location_accuracy = accuracy
+    conv.buyer_location_label = (req.POST.get('label') or '').strip()[:255]
+    conv.location_shared_at = timezone.now()
+    conv.save(update_fields=['buyer_latitude', 'buyer_longitude', 'buyer_location_accuracy',
+                             'buyer_location_label', 'location_shared_at', 'updated_at'])
+
+    label = conv.buyer_location_label or f'{conv.buyer_latitude}, {conv.buyer_longitude}'
+    msg = ChatMessage.objects.create(
+        conversation=conv, sender=req.user, kind=ChatMessage.LOCATION,
+        body=f'Shared their delivery location: {label}')
+    _notify(conv.seller.user_id, '📍 Buyer shared a location',
+            f'{req.user.username} shared their location for {conv.product.name}.',
+            reverse('store:chat_thread', args=[conv.id]))
+
+    return JsonResponse({'success': True, 'map_url': conv.location_map_url,
+                         'message': _chat_message_payload(msg, req.user)})
+
+
+@login_required
+@require_POST
+def issue_invoice(req, conversation_id):
+    """Seller issues the agreed price + delivery fee. This becomes the amount
+    the buyer is charged — the listed product price is only a starting point."""
+    conv = _get_conversation_or_404(req.user, conversation_id)
+    if conv.seller.user_id != req.user.id:
+        return JsonResponse({'success': False, 'error': 'Only the seller can issue an invoice.'}, status=403)
+
+    try:
+        unit_price = Decimal(str(req.POST.get('unit_price'))).quantize(Decimal('0.01'))
+        delivery_fee = Decimal(str(req.POST.get('delivery_fee') or '0')).quantize(Decimal('0.01'))
+        quantity = max(1, int(float(req.POST.get('quantity') or 1)))
+    except (TypeError, ValueError, ArithmeticError):
+        return JsonResponse({'success': False, 'error': 'Enter a valid price, fee and quantity.'}, status=400)
+
+    if unit_price <= 0 or delivery_fee < 0:
+        return JsonResponse({'success': False, 'error': 'Prices cannot be negative.'}, status=400)
+    if conv.product.stock < quantity:
+        return JsonResponse({'success': False, 'error': 'You do not have that much stock.'}, status=400)
+
+    color, size = _normalise_variant(conv.product, req.POST.get('color'), req.POST.get('size'))
+
+    with transaction.atomic():
+        # Only one open invoice per thread — a new quote replaces the old one.
+        conv.invoices.filter(status=Invoice.PENDING).update(status=Invoice.CANCELLED)
+        invoice = Invoice.objects.create(
+            conversation=conv, product=conv.product, buyer=conv.buyer, seller=conv.seller,
+            quantity=quantity, color=color, size=size,
+            unit_price=unit_price, delivery_fee=delivery_fee,
+            note=(req.POST.get('note') or '').strip()[:1000],
+        )
+        msg = ChatMessage.objects.create(
+            conversation=conv, sender=req.user, kind=ChatMessage.INVOICE, invoice=invoice,
+            body=f'Invoice: {quantity} × GH₵{unit_price} + GH₵{delivery_fee} delivery = GH₵{invoice.total}')
+    conv.save(update_fields=['updated_at'])
+
+    _notify(conv.buyer_id, '🧾 You have an invoice',
+            f'{conv.seller.store_name} sent an invoice of GH₵{invoice.total} for {conv.product.name}.',
+            reverse('store:chat_thread', args=[conv.id]))
+
+    return JsonResponse({'success': True, 'message': _chat_message_payload(msg, req.user)})
+
+
+@login_required
+@require_POST
+def cancel_invoice(req, invoice_id):
+    invoice = get_object_or_404(Invoice.objects.select_related('conversation', 'seller'), id=invoice_id)
+    if invoice.seller.user_id != req.user.id:
+        return JsonResponse({'success': False, 'error': 'Only the seller can cancel an invoice.'}, status=403)
+    if invoice.status != Invoice.PENDING:
+        return JsonResponse({'success': False, 'error': 'That invoice is no longer open.'}, status=400)
+    invoice.status = Invoice.CANCELLED
+    invoice.save(update_fields=['status'])
+    ChatMessage.objects.create(conversation=invoice.conversation, sender=req.user,
+                               kind=ChatMessage.SYSTEM, body=f'Invoice #{invoice.id} was cancelled.')
+    return JsonResponse({'success': True})
+
+
+@login_required
+def pay_invoice(req, invoice_id):
+    """Buyer accepts the invoice: it becomes the checkout, priced at the
+    agreed amount plus the delivery fee."""
+    invoice = get_object_or_404(
+        Invoice.objects.select_related('product', 'buyer', 'seller', 'conversation'), id=invoice_id)
+    if invoice.buyer_id != req.user.id:
+        raise Http404('Invoice not found.')
+    if invoice.status == Invoice.PAID:
+        messages.info(req, 'This invoice has already been paid.')
+        return redirect('store:chat_thread', conversation_id=invoice.conversation_id)
+    if not invoice.is_payable:
+        messages.error(req, 'This invoice is no longer available.')
+        return redirect('store:chat_thread', conversation_id=invoice.conversation_id)
+    if invoice.product.stock < invoice.quantity:
+        messages.error(req, 'The seller no longer has enough stock for this invoice.')
+        return redirect('store:chat_thread', conversation_id=invoice.conversation_id)
+
+    # An invoice checkout stands alone: mixing it with the running cart would
+    # make the agreed total ambiguous.
+    req.session['cart'] = {
+        _cart_key(invoice.product.id, invoice.color, invoice.size): {
+            'quantity': invoice.quantity, 'color': invoice.color, 'size': invoice.size,
+        }
+    }
+    req.session['invoice_checkout'] = invoice.id
+    req.session.pop('shared_purchase', None)
+    req.session.modified = True
+    return redirect('store:checkout')
+
+
+def _active_invoice(req):
+    """The invoice driving this checkout, if any. Returns None (and clears the
+    session flag) when it is missing, not the buyer's, or no longer open."""
+    invoice_id = req.session.get('invoice_checkout')
+    if not invoice_id or not req.user.is_authenticated:
+        return None
+    invoice = Invoice.objects.select_related('product', 'seller', 'conversation').filter(
+        id=invoice_id, buyer=req.user, status=Invoice.PENDING).first()
+    if not invoice:
+        req.session.pop('invoice_checkout', None)
+        req.session.modified = True
+        return None
+    return invoice
+
+
+def _record_invoice_order(req, order, invoice, paid_amount):
+    """Write the order line for an invoice purchase at the agreed price,
+    decrement stock, mark the invoice paid and tell both parties."""
+    with transaction.atomic():
+        product = Product.objects.select_for_update().get(id=invoice.product_id)
+        qty = min(product.stock, invoice.quantity)
+        if qty > 0:
+            product.stock -= qty
+            product.save(update_fields=['stock'])
+        OrderItem.objects.create(
+            order=order, product=product, quantity=max(1, qty),
+            price=invoice.unit_price,
+            subtotal=invoice.unit_price * Decimal(max(1, qty)),
+            color=invoice.color, size=invoice.size,
+        )
+        order.delivery_fee = invoice.delivery_fee
+        order.total_amount = paid_amount
+        order.save(update_fields=['delivery_fee', 'total_amount'])
+        invoice.mark_paid(order)
+
+    ChatMessage.objects.create(
+        conversation=invoice.conversation, kind=ChatMessage.SYSTEM,
+        body=f'Invoice #{invoice.id} was paid — GH₵{invoice.total} (including GH₵{invoice.delivery_fee} delivery).')
+    _notify(invoice.seller.user_id, '💳 Invoice paid',
+            f'{order.user.username} paid GH₵{invoice.total} for {invoice.product.name}.',
+            reverse('store:order_receipt', args=[order.id]))

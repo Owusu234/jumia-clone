@@ -35,6 +35,18 @@ urlpatterns = [
     path('cart/link/<int:invite_id>/cancel/', views.cancel_cart_invite, name='cancel_cart_invite'),
     path('cart/link/<int:invite_id>/<str:action>/', views.respond_cart_invite, name='respond_cart_invite'),
     path('cart/', views.cart_view, name='cart'),
+    # ==================== IN-SITE CHAT & INVOICES ====================
+
+    path('chat/', views.chat_inbox, name='chat_inbox'),
+    path('chat/start/<int:product_id>/', views.start_conversation, name='start_conversation'),
+    path('chat/<int:conversation_id>/', views.chat_thread, name='chat_thread'),
+    path('chat/<int:conversation_id>/messages/', views.chat_messages, name='chat_messages'),
+    path('chat/<int:conversation_id>/send/', views.chat_send, name='chat_send'),
+    path('chat/<int:conversation_id>/location/', views.chat_share_location, name='chat_share_location'),
+    path('chat/<int:conversation_id>/invoice/', views.issue_invoice, name='issue_invoice'),
+    path('invoice/<int:invoice_id>/cancel/', views.cancel_invoice, name='cancel_invoice'),
+    path('invoice/<int:invoice_id>/pay/', views.pay_invoice, name='pay_invoice'),
+
     path('admin/seller/<int:seller_id>/approve/', views.approve_seller, name='approve_seller'),
     path('admin/seller/<int:seller_id>/reject/', views.reject_seller, name='reject_seller'),
     path('admin/seller/<int:seller_id>/application/', views.seller_application_detail, name='seller_application_detail'),

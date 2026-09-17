@@ -1,0 +1,227 @@
+{% extends 'store/base.html' %}
+{% block title %}Chat · {{ product.name }} | ShopVibe{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 820px;">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h5 class="fw-bold mb-0">{{ counterparty }}</h5>
+      <small class="text-muted">
+        <a href="{% url 'store:product_detail' product.slug %}" class="text-decoration-none">{{ product.name }}</a>
+        · listed at GH₵{{ product.price }}
+      </small>
+    </div>
+    <a href="{% url 'store:chat_inbox' %}" class="btn btn-sm btn-outline-secondary">All messages</a>
+  </div>
+
+  {% if is_seller_side %}
+    <!-- Seller view: buyer location + invoice issuing -->
+    <div class="card border-theme bg-card p-3 mb-3">
+      <h6 class="fw-bold mb-2"><i class="bi bi-geo-alt-fill me-1"></i>Buyer location</h6>
+      {% if conversation.has_location %}
+        <p class="small mb-1">
+          {% if conversation.buyer_location_label %}{{ conversation.buyer_location_label }} · {% endif %}
+          {{ conversation.buyer_latitude }}, {{ conversation.buyer_longitude }}
+          {% if conversation.buyer_location_accuracy %}
+            <span class="text-muted">(±{{ conversation.buyer_location_accuracy|floatformat:0 }} m)</span>
+          {% endif %}
+        </p>
+        <a href="{{ conversation.location_map_url }}" target="_blank" rel="noopener noreferrer"
+           class="small">Open in Google Maps</a>
+        <small class="text-muted d-block mt-1">Shared {{ conversation.location_shared_at|date:"d M Y, H:i" }} — use it to work out the delivery fee.</small>
+      {% else %}
+        <p class="small text-muted mb-0">The buyer has not shared a location yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="card border-theme bg-card p-3 mb-3">
+      <h6 class="fw-bold mb-2"><i class="bi bi-receipt me-1"></i>Issue an invoice</h6>
+      <p class="small text-muted">
+        The agreed price replaces the listed price at checkout. Issuing a new invoice cancels the previous open one.
+      </p>
+      <form onsubmit="return issueInvoice(event)" class="row g-2">
+        {% csrf_token %}
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1">Agreed price (each)</label>
+          <input type="number" step="0.01" min="0.01" class="form-control form-control-sm"
+                 id="invUnitPrice" value="{{ product.price }}" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1">Quantity</label>
+          <input type="number" min="1" class="form-control form-control-sm" id="invQty" value="1" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1">Delivery fee</label>
+          <input type="number" step="0.01" min="0" class="form-control form-control-sm" id="invDelivery" value="0.00" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1">Colour / size</label>
+          <div class="d-flex gap-1">
+            <input type="text" class="form-control form-control-sm" id="invColor" placeholder="Colour">
+            <input type="text" class="form-control form-control-sm" id="invSize" placeholder="Size">
+          </div>
+        </div>
+        <div class="col-12">
+          <input type="text" class="form-control form-control-sm" id="invNote" placeholder="Note to the buyer (optional)">
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary btn-sm" type="submit">Send invoice</button>
+          <span class="small text-danger ms-2 d-none" id="invError"></span>
+        </div>
+      </form>
+    </div>
+  {% else %}
+    <!-- Buyer view: share location before chatting -->
+    <div class="card border-theme bg-card p-3 mb-3 {% if conversation.has_location %}d-none{% endif %}" id="locationCard">
+      <h6 class="fw-bold mb-1"><i class="bi bi-geo-alt-fill me-1"></i>Share your location</h6>
+      <p class="small text-muted mb-2">
+        {{ counterparty }} needs your current location to work out the delivery fee. Only this seller sees it.
+      </p>
+      <button class="btn btn-sm btn-primary" id="shareLocationBtn" onclick="shareLocation()">Share my location</button>
+      <div class="small text-danger mt-2 d-none" id="locationError"></div>
+    </div>
+    {% if latest_invoice and latest_invoice.is_payable %}
+    <div class="alert alert-primary d-flex justify-content-between align-items-center">
+      <div>
+        <strong>Invoice waiting:</strong> GH₵{{ latest_invoice.total }}
+        <small class="d-block text-muted">
+          {{ latest_invoice.quantity }} × GH₵{{ latest_invoice.unit_price }} + GH₵{{ latest_invoice.delivery_fee }} delivery
+        </small>
+      </div>
+      <a href="{% url 'store:pay_invoice' latest_invoice.id %}" class="btn btn-primary btn-sm">Accept &amp; pay</a>
+    </div>
+    {% endif %}
+  {% endif %}
+
+  <div class="card border-theme bg-card p-3">
+    <div id="threadMessages" style="max-height: 55vh; overflow-y: auto; display:flex; flex-direction:column; gap:.6rem;">
+      {% for msg in chat_messages %}
+        {% if msg.invoice %}
+        <div class="border rounded p-2">
+          <div class="fw-bold small">🧾 Invoice #{{ msg.invoice.id }}</div>
+          <div class="small">{{ msg.invoice.quantity }} × GH₵{{ msg.invoice.unit_price }} = GH₵{{ msg.invoice.items_total }}</div>
+          <div class="small">Delivery: GH₵{{ msg.invoice.delivery_fee }}</div>
+          <div class="fw-bold small">Total: GH₵{{ msg.invoice.total }}</div>
+          {% if msg.invoice.note %}<div class="small text-muted">{{ msg.invoice.note }}</div>{% endif %}
+          {% if not is_seller_side and msg.invoice.is_payable %}
+            <a href="{% url 'store:pay_invoice' msg.invoice.id %}" class="btn btn-primary btn-sm mt-2">Accept &amp; pay GH₵{{ msg.invoice.total }}</a>
+          {% else %}
+            <div class="small text-muted mt-1">Status: {{ msg.invoice.get_status_display }}</div>
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="{% if msg.kind == 'system' %}text-center text-muted small{% elif msg.sender_id == user.id %}text-end{% endif %}">
+          <span class="d-inline-block px-2 py-1 rounded"
+                style="{% if msg.sender_id == user.id %}background: var(--p, #0d6efd); color:#fff;{% elif msg.kind != 'system' %}background: rgba(0,0,0,.06);{% endif %} max-width: 85%;">
+            {{ msg.body }}
+            <small class="d-block" style="font-size:.7rem; opacity:.7;">{{ msg.created_at|date:"d M, H:i" }}</small>
+          </span>
+        </div>
+        {% endif %}
+      {% empty %}
+        <p class="text-muted small text-center my-3">No messages yet. Say hello.</p>
+      {% endfor %}
+    </div>
+
+    <form class="d-flex gap-2 mt-3" onsubmit="return sendMessage(event)">
+      <input type="text" id="threadInput" class="form-control" autocomplete="off"
+             placeholder="{% if is_seller_side %}Reply to the buyer…{% else %}Ask about the price or delivery…{% endif %}">
+      <button class="btn btn-primary" id="threadSendBtn" type="submit"><i class="bi bi-send"></i></button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  const CONV = {{ conversation.id }};
+  const CSRF = "{{ csrf_token }}";
+  const lastId = {{ last_message_id|default:0 }};
+  const box = document.getElementById('threadMessages');
+  box.scrollTop = box.scrollHeight;
+
+  function post(url, data) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': CSRF,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: new URLSearchParams(data || {})
+    }).then(r => r.json());
+  }
+
+  window.sendMessage = function (e) {
+    e.preventDefault();
+    const input = document.getElementById('threadInput');
+    const body = input.value.trim();
+    if (!body) return false;
+    document.getElementById('threadSendBtn').disabled = true;
+    post(`/chat/${CONV}/send/`, {body: body}).then(data => {
+      document.getElementById('threadSendBtn').disabled = false;
+      if (data.success) { location.reload(); return; }
+      if (data.code === 'location_required') {
+        const card = document.getElementById('locationCard');
+        if (card) card.classList.remove('d-none');
+      }
+      alert(data.error || 'Message not sent.');
+    }).catch(() => { document.getElementById('threadSendBtn').disabled = false; });
+    return false;
+  };
+
+  window.shareLocation = function () {
+    const err = document.getElementById('locationError');
+    err.classList.add('d-none');
+    if (!navigator.geolocation) {
+      err.textContent = 'Your browser cannot share a location. Describe your area in the chat instead.';
+      err.classList.remove('d-none');
+      return;
+    }
+    document.getElementById('shareLocationBtn').disabled = true;
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      post(`/chat/${CONV}/location/`, {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy || ''
+      }).then(data => {
+        if (data.success) { location.reload(); return; }
+        document.getElementById('shareLocationBtn').disabled = false;
+        err.textContent = data.error || 'Could not save your location.';
+        err.classList.remove('d-none');
+      });
+    }, function () {
+      document.getElementById('shareLocationBtn').disabled = false;
+      err.textContent = 'Location permission was denied. The seller needs it to quote delivery.';
+      err.classList.remove('d-none');
+    }, {enableHighAccuracy: true, timeout: 10000});
+  };
+
+  window.issueInvoice = function (e) {
+    e.preventDefault();
+    const err = document.getElementById('invError');
+    err.classList.add('d-none');
+    post(`/chat/${CONV}/invoice/`, {
+      unit_price: document.getElementById('invUnitPrice').value,
+      quantity: document.getElementById('invQty').value,
+      delivery_fee: document.getElementById('invDelivery').value,
+      color: document.getElementById('invColor').value,
+      size: document.getElementById('invSize').value,
+      note: document.getElementById('invNote').value
+    }).then(data => {
+      if (data.success) { location.reload(); return; }
+      err.textContent = data.error || 'Could not send the invoice.';
+      err.classList.remove('d-none');
+    });
+    return false;
+  };
+
+  // Light polling so a reply shows up without a manual refresh.
+  setInterval(function () {
+    fetch(`/chat/${CONV}/messages/?after=${lastId}`, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(r => r.json())
+      .then(d => { if (d.success && d.messages.length) location.reload(); })
+      .catch(() => {});
+  }, 15000);
+})();
+</script>
+{% endblock %}

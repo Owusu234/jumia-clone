@@ -3,7 +3,36 @@ from django.contrib import admin
 from .models import (
     CommunityHighlight, HighlightEngagement, HighlightComment,
     DiscountVoucher, SellerHighlightGoal,
+    Conversation, ChatMessage, Invoice,
 )
+
+
+class ChatMessageInline(admin.TabularInline):
+    model = ChatMessage
+    extra = 0
+    readonly_fields = ("sender", "kind", "body", "invoice", "is_read", "created_at")
+    can_delete = False
+
+
+@admin.register(Conversation)
+class ConversationAdmin(admin.ModelAdmin):
+    list_display = ("id", "product", "buyer", "seller", "has_location", "updated_at")
+    list_filter = ("seller",)
+    search_fields = ("product__name", "buyer__username", "seller__store_name")
+    readonly_fields = ("created_at", "updated_at", "location_shared_at")
+    inlines = [ChatMessageInline]
+
+    @admin.display(boolean=True)
+    def has_location(self, obj):
+        return obj.has_location
+
+
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    list_display = ("id", "product", "buyer", "seller", "unit_price", "delivery_fee", "status", "created_at")
+    list_filter = ("status",)
+    search_fields = ("product__name", "buyer__username", "seller__store_name")
+    readonly_fields = ("created_at", "paid_at", "order")
 
 
 @admin.register(SellerHighlightGoal)

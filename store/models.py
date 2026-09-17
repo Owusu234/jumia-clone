@@ -491,6 +491,10 @@ class Order(models.Model):
     # someone without an account (a guest shared-cart "gift" purchase).
     # Always blank for normal orders and for logged-in payers.
     guest_email = models.EmailField(blank=True, null=True)
+    # Delivery/shipping charged on this order. Non-zero only for orders paid
+    # against a seller invoice, where the fee comes from the buyer's shared
+    # location. `total_amount` already includes it.
+    delivery_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     status = models.CharField(max_length=20, default='pending', 
         choices=[
             ('pending', 'Pending'),
@@ -970,3 +974,148 @@ class DiscountVoucher(models.Model):
         self.used_at = timezone.now()
         self.used_on_order = order
         self.save(update_fields=["is_used", "used_at", "used_on_order"])
+
+
+# ==================== IN-SITE BUYER ↔ SELLER CHAT ====================
+
+class Conversation(models.Model):
+    """A private thread between one buyer and the seller of one product.
+
+    Only the two participants can read it. The buyer's shared location lives
+    here (not on each message) because it is the buyer's current delivery
+    point for this negotiation, and the seller uses it to quote a delivery
+    fee."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="conversations")
+    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="buyer_conversations")
+    seller = models.ForeignKey(SellerProfile, on_delete=models.CASCADE, related_name="conversations")
+
+    # Buyer location, captured from the browser when the chat is opened.
+    buyer_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    buyer_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    buyer_location_label = models.CharField(max_length=255, blank=True, default='')
+    buyer_location_accuracy = models.FloatField(null=True, blank=True,
+        help_text="Accuracy radius in metres reported by the browser")
+    location_shared_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['product', 'buyer']
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.buyer.username} ↔ {self.seller.store_name} · {self.product.name}"
+
+    @property
+    def has_location(self):
+        return self.buyer_latitude is not None and self.buyer_longitude is not None
+
+    @property
+    def location_map_url(self):
+        if not self.has_location:
+            return ''
+        return f"https://www.google.com/maps?q={self.buyer_latitude},{self.buyer_longitude}"
+
+    def is_participant(self, user):
+        return bool(user and user.is_authenticated and
+                    user.id in (self.buyer_id, self.seller.user_id))
+
+    def other_party(self, user):
+        """The display name of the person on the other side."""
+        if user.id == self.buyer_id:
+            return self.seller.store_name
+        return self.buyer.username
+
+    def unread_count_for(self, user):
+        return self.messages.filter(is_read=False).exclude(sender_id=user.id).count()
+
+    @property
+    def latest_invoice(self):
+        return self.invoices.order_by('-created_at').first()
+
+
+class ChatMessage(models.Model):
+    TEXT = 'text'
+    LOCATION = 'location'
+    INVOICE = 'invoice'
+    SYSTEM = 'system'
+    KIND_CHOICES = [
+        (TEXT, 'Text'),
+        (LOCATION, 'Location'),
+        (INVOICE, 'Invoice'),
+        (SYSTEM, 'System'),
+    ]
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
+    # Null sender = written by the system (e.g. "location shared").
+    sender = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="chat_messages")
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default=TEXT)
+    body = models.TextField(blank=True, default='')
+    invoice = models.ForeignKey('Invoice', null=True, blank=True, on_delete=models.CASCADE, related_name="messages")
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        who = self.sender.username if self.sender else 'system'
+        return f"{who}: {self.body[:40]}"
+
+
+class Invoice(models.Model):
+    """The seller's offer at the end of a negotiation: the agreed unit price
+    plus the delivery fee worked out from the buyer's shared location. The
+    product's listed price still shows on the storefront — this is what the
+    buyer actually pays."""
+    PENDING = 'pending'
+    PAID = 'paid'
+    CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (PENDING, 'Awaiting payment'),
+        (PAID, 'Paid'),
+        (CANCELLED, 'Cancelled'),
+    ]
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="invoices")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="invoices")
+    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="invoices")
+    seller = models.ForeignKey(SellerProfile, on_delete=models.CASCADE, related_name="invoices")
+
+    quantity = models.PositiveIntegerField(default=1)
+    color = models.CharField(max_length=50, blank=True, default='')
+    size = models.CharField(max_length=50, blank=True, default='')
+    # The negotiated price per unit — may be above or below Product.price.
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    delivery_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    note = models.TextField(blank=True, default='')
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=PENDING)
+    order = models.ForeignKey('Order', null=True, blank=True, on_delete=models.SET_NULL, related_name="invoices")
+    created_at = models.DateTimeField(auto_now_add=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Invoice #{self.id} · {self.product.name} · GH₵{self.total}"
+
+    @property
+    def items_total(self):
+        return (Decimal(self.unit_price) * Decimal(self.quantity)).quantize(Decimal('0.01'))
+
+    @property
+    def total(self):
+        return (self.items_total + Decimal(self.delivery_fee)).quantize(Decimal('0.01'))
+
+    @property
+    def is_payable(self):
+        return self.status == self.PENDING and self.product.is_active
+
+    def mark_paid(self, order=None):
+        self.status = self.PAID
+        self.paid_at = timezone.now()
+        self.order = order
+        self.save(update_fields=['status', 'paid_at', 'order'])

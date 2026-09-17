@@ -1,0 +1,41 @@
+{% extends 'store/base.html' %}
+{% block title %}Messages | ShopVibe{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 820px;">
+  <h4 class="fw-bold mb-1"><i class="bi bi-chat-dots me-2"></i>Messages</h4>
+  <p class="text-muted small mb-4">Each conversation is private between you and the other party.</p>
+
+  {% for thread in threads %}
+  <a href="{% url 'store:chat_thread' thread.conversation.id %}"
+     class="card border-theme bg-card p-3 mb-3 text-decoration-none d-block">
+    <div class="d-flex align-items-center gap-3">
+      <img src="{{ thread.conversation.product.get_image }}" alt="{{ thread.conversation.product.name }}"
+           style="width:56px;height:56px;object-fit:contain;background:#fff;" class="rounded border-theme">
+      <div class="flex-grow-1">
+        <div class="d-flex align-items-center gap-2">
+          <h6 class="fw-bold mb-0">{{ thread.counterparty }}</h6>
+          {% if thread.is_seller_side %}
+            <span class="badge bg-secondary">Buyer</span>
+          {% else %}
+            <span class="badge bg-primary">Seller</span>
+          {% endif %}
+          {% if thread.unread %}<span class="badge bg-danger">{{ thread.unread }} new</span>{% endif %}
+        </div>
+        <small class="text-muted d-block">{{ thread.conversation.product.name }}</small>
+        {% if thread.last_message %}
+          <small class="text-muted">{{ thread.last_message.body|truncatechars:70 }}</small>
+        {% endif %}
+      </div>
+      <i class="bi bi-chevron-right text-muted"></i>
+    </div>
+  </a>
+  {% empty %}
+  <div class="text-center py-5">
+    <i class="bi bi-chat-square-text" style="font-size:3rem;opacity:.3;"></i>
+    <h6 class="fw-bold mt-3">No conversations yet</h6>
+    <p class="text-muted small">Open a product and tap “Chat with the seller” to start one.</p>
+    <a href="{% url 'store:home' %}" class="btn btn-primary px-4">Browse products</a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

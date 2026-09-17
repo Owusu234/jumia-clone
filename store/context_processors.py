@@ -1,4 +1,5 @@
-from .models import AdminNotification, UserNotification, Region
+from django.db.models import Q
+from .models import AdminNotification, UserNotification, Region, ChatMessage
 
 def global_context(req):
     """Provides cart_count, global variables, and admin notifications to all templates"""
@@ -58,5 +59,16 @@ def global_context(req):
     else:
         context['user_notification_count'] = 0
         context['user_notifications'] = []
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 💬 IN-SITE CHAT — unread badge for the nav icon (buyer + seller threads)
+    # ─────────────────────────────────────────────────────────────────────────────
+    if req.user.is_authenticated:
+        context['unread_chat_count'] = ChatMessage.objects.filter(
+            Q(conversation__buyer=req.user) | Q(conversation__seller__user=req.user),
+            is_read=False,
+        ).exclude(sender=req.user).count()
+    else:
+        context['unread_chat_count'] = 0
 
     return context
