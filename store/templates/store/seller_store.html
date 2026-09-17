@@ -1,17 +1,34 @@
 {% extends 'store/base.html' %}
 {% block title %}{{ seller.store_name }} | ShopVibe{% endblock %}
 {% block content %}
+<style>
+.seller-store-identity { display:flex; align-items:center; gap:14px; min-width:0; }
+.seller-store-avatar { width:58px; height:58px; flex:0 0 58px; border-radius:50%; overflow:hidden; display:flex; align-items:center; justify-content:center; background:var(--card); border:2px solid var(--border); color:var(--p); font-size:1.35rem; }
+.seller-store-avatar img { width:100%; height:100%; object-fit:cover; }
+.seller-store-details { min-width:0; }
+.seller-store-details h4 { overflow-wrap:anywhere; }
+@media (max-width:767px) { .seller-store-identity { align-items:flex-start; } .seller-store-avatar { width:50px; height:50px; flex-basis:50px; } }
+</style>
 <div class="container py-4" style="max-width: 1000px;">
   <div class="card border-theme bg-card p-3 p-md-4 mb-4">
     <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
-      <div>
-        <h4 class="fw-bold mb-1"><i class="bi bi-shop me-2"></i>{{ seller.store_name }}</h4>
-        {% if seller.description %}<p class="text-muted mb-2">{{ seller.description }}</p>{% endif %}
-        <small class="text-muted d-block">
+      <div class="seller-store-identity">
+        <div class="seller-store-avatar" aria-hidden="true">
+          {% if seller.user.user_profile %}
+            <img src="{{ seller.user.user_profile.get_avatar_url }}" alt="{{ seller.store_name }} profile" loading="lazy">
+          {% else %}
+            <i class="bi bi-shop"></i>
+          {% endif %}
+        </div>
+        <div class="seller-store-details">
+          <h4 class="fw-bold mb-1"><i class="bi bi-shop me-2"></i>{{ seller.store_name }}</h4>
+          {% if seller.description %}<p class="text-muted mb-2">{{ seller.description }}</p>{% endif %}
+          <small class="text-muted d-block">
           <i class="bi bi-geo-alt me-1"></i>{{ seller.region|default:"Ghana" }}
           · <span id="followerCount">{{ follower_count }}</span> follower{{ follower_count|pluralize }}
           · {{ product_count }} product{{ product_count|pluralize }}
-        </small>
+          </small>
+        </div>
       </div>
       <button id="followBtn"
               class="btn {% if is_following %}btn-outline-secondary{% else %}btn-primary{% endif %}"
@@ -42,7 +59,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="text-muted">This store has no products yet.</p>
+  <p class="text-muted">This store does not have any products yet.</p>
   {% endif %}
 </div>
 <script>
@@ -57,7 +74,7 @@ function toggleFollow(btn) {
     headers: {'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest'}
   }).then(r => r.json()).then(data => {
     btn.disabled = false;
-    if (!data.success) { alert(data.error || 'Could not update follow.'); return; }
+    if (!data.success) { alert(data.error || 'We could not update your follow status. Please try again.'); return; }
     document.getElementById('followerCount').textContent = data.followers;
     btn.className = data.following ? 'btn btn-outline-secondary' : 'btn btn-primary';
     btn.innerHTML = data.following

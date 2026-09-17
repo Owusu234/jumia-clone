@@ -191,28 +191,19 @@
 
 <div class="container-fluid px-3 px-md-4 pt-4">
     
-    <!-- ✅ Welcome Tile (Always Orange) -->
+    <!-- Welcome message -->
     {% if user.is_authenticated %}
     <div class="welcome-tile">
-        <div class="welcome-profile">
-            {% if user.user_profile %}
-                <img src="{{ user.user_profile.get_avatar_url }}" alt="{{ user.username }}" class="welcome-profile-avatar" loading="lazy">
-            {% endif %}
-            <div class="welcome-profile-meta">
-                <div class="profile-name">{{ user.first_name|default:user.username }} 👋</div>
-                {% if user.user_profile.bio %}
-                    <p class="profile-bio">{{ user.user_profile.bio|truncatechars:90 }}</p>
-                {% else %}
-                    <p class="profile-bio">Welcome back. Discover amazing deals on {{ products.paginator.count|default:0 }}+ products.</p>
-                {% endif %}
-            </div>
+        <div>
+            <h2>Welcome back, {{ user.first_name|default:user.username }}.</h2>
+            <p>Explore quality products, discover new sellers, and find something you will love.</p>
         </div>
     </div>
     {% else %}
     <div class="welcome-tile">
         <div>
-            <h2>Welcome to ShopVibe! 🛍️</h2>
-            <p>Your one-stop marketplace. <a href="{% url 'store:login' %}">Sign in</a> for more.</p>
+            <h2>Welcome to ShopVibe</h2>
+            <p>Explore quality products from trusted sellers. <a href="{% url 'store:login' %}">Sign in</a> for a more personalised experience.</p>
         </div>
     </div>
     {% endif %}
@@ -222,7 +213,7 @@
     <div class="seller-cta-banner">
         <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
             <div>
-                <h5 class="fw-bold mb-1">💼 Start Selling on ShopVibe</h5>
+                <h5 class="fw-bold mb-1">Start Selling on ShopVibe</h5>
                 <p class="mb-0 small text-muted">Open your store, reach thousands of buyers, and grow your business today.</p>
             </div>
             {% if user.is_authenticated %}
@@ -234,11 +225,11 @@
     </div>
     {% endif %}
 
-    <!-- 🏆 Community Highlights teaser -->
+    <!-- Community Highlights teaser -->
     <div class="seller-cta-banner" style="border-left-color: var(--success);">
         <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
             <div>
-                <h5 class="fw-bold mb-1">🏆 Community Highlights</h5>
+                <h5 class="fw-bold mb-1">Community Highlights</h5>
                 <p class="mb-0 small text-muted">
                     Real unboxings from delivered orders. Like <strong>+1</strong>,
                     comment <strong>+2</strong>, share <strong>+3</strong> — hit the
@@ -336,8 +327,8 @@
         {% if followed_updates %}
     <div class="mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0">⭐ New from sellers you follow</h6>
-            <small class="text-muted">latest uploads</small>
+            <h6 class="fw-bold mb-0">New from sellers you follow</h6>
+            <small class="text-muted">Latest uploads</small>
         </div>
         <div class="d-flex gap-3 overflow-auto pb-2" style="scroll-snap-type: x mandatory;">
             {% for p in followed_updates %}
@@ -361,7 +352,7 @@
 <!-- 🛍️ Products Grid -->
     {% if products %}
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="fw-bold mb-0">🛍️ All Products</h6>
+        <h6 class="fw-bold mb-0">All Products</h6>
         <small class="text-muted">{{ products.paginator.count }} items</small>
     </div>
     

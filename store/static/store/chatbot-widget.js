@@ -203,7 +203,7 @@
       // On desktop it remains anchored near the floating bubble.
       if (window.innerWidth > 767) positionPanelNearBubble();
       if (!greeted) {
-        addBotMessage("Hi! Tell me what you're shopping for and I'll suggest a few things from the store.");
+        addBotMessage("Welcome. Tell me what you are looking for, and I will recommend relevant products from the store.");
         greeted = true;
       }
       setTimeout(() => inputEl.focus(), 0);
@@ -263,7 +263,7 @@
         <img src="${p.image_url || ""}" alt="${escapeHtml(p.name || "")}" />
         <div class="info">
           <div class="name">${escapeHtml(p.name || "")}</div>
-          <div class="price">${p.price != null ? "$" + p.price : ""}</div>
+          <div class="price">${p.price != null ? "GH₵" + p.price : ""}</div>
         </div>
       `;
       wrap.appendChild(a);

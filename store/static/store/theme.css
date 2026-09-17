@@ -680,3 +680,33 @@ footer .footer-brand { color: var(--p); font-weight: 800; font-size: 1.2rem; }
 .card-body > .fw-semibold.small.mb-1 {
   color: #000 !important;
 }
+
+/* Professional typography and navigation polish */
+body {
+  font-size: 15px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+p, li, label, .form-control, .form-select, .btn, .dropdown-item, .nav-link,
+.mobile-tabbar a, .small {
+  letter-spacing: 0.005em;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.2;
+}
+
+.text-muted {
+  line-height: 1.5;
+}
+
+.mobile-tabbar a {
+  font-family: var(--font-body);
+  line-height: 1.15;
+}
+
+@media (max-width: 767px) {
+  .mobile-tabbar a { min-height: 48px; }
+  .mobile-tabbar a#sv-mobile-chat-button.active { color: var(--p); }
+}

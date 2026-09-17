@@ -42,14 +42,14 @@
   flex-direction: column;
   overflow: hidden;
   z-index: 9999;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-body, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
 }
 #sv-chat-panel.open { display: flex; }
 
 /* Mobile: the assistant is launched from the bottom navigation bar instead
    of using a floating button. The chat panel opens just above the nav. */
 @media (max-width: 767px) {
-  #sv-chat-bubble {
+  #sv-chat-bubble, #sv-chat-bubble * {
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;

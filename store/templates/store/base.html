@@ -270,6 +270,9 @@
             <a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}">
                 <i class="bi bi-camera{% if request.resolver_match.url_name == 'community_highlights' %}-fill{% endif %}"></i>Community
             </a>
+            <a href="#" id="sv-mobile-chat-button" aria-label="Open Shopping Assistant">
+                <i class="bi bi-chat-dots"></i>Chat
+            </a>
             <a href="{% url 'store:wishlist' %}" class="position-relative {% if request.resolver_match.url_name == 'wishlist' %}active{% endif %}">
                 <i class="bi bi-heart{% if request.resolver_match.url_name == 'wishlist' %}-fill{% endif %}"></i>Wishlist
                 <span class="tab-badge" id="wishlistTabCount" style="display:none;">0</span>
@@ -277,9 +280,6 @@
             <a href="{% url 'store:cart' %}" class="position-relative {% if request.resolver_match.url_name == 'cart' %}active{% endif %}">
                 <i class="bi bi-cart{% if request.resolver_match.url_name == 'cart' %}-fill{% endif %}"></i>Cart
                 {% if cart_count %}<span class="tab-badge">{{ cart_count }}</span>{% endif %}
-            </a>
-            <a href="#" id="sv-mobile-chat-button" aria-label="Open Shopping Assistant">
-                <i class="bi bi-chat-dots"></i>Chat
             </a>
         </div>
     </nav>
@@ -616,7 +616,7 @@
     </script>
 
     {% block extra_js %}{% endblock %}
-    <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}?v=3">
-    <script src="{% static 'store/chatbot-widget.js' %}?v=3"></script>
+    <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}?v=4">
+    <script src="{% static 'store/chatbot-widget.js' %}?v=4"></script>
 </body>
 </html>
