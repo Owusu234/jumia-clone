@@ -20,16 +20,10 @@
       <h6 class="fw-bold mb-2"><i class="bi bi-geo-alt-fill me-1"></i>Buyer location</h6>
       {% if conversation.has_location %}
         <p class="small mb-1">
-          {% if conversation.buyer_location_label %}
-            <strong>{{ conversation.buyer_location_label }}</strong>
-            {% if conversation.buyer_location_accuracy %}
-              <span class="text-muted">(±{{ conversation.buyer_location_accuracy|floatformat:0 }} m)</span>
-            {% endif %}
-          {% else %}
-            {{ conversation.buyer_latitude }}, {{ conversation.buyer_longitude }}
-            {% if conversation.buyer_location_accuracy %}
-              <span class="text-muted">(±{{ conversation.buyer_location_accuracy|floatformat:0 }} m)</span>
-            {% endif %}
+          {% if conversation.buyer_location_label %}{{ conversation.buyer_location_label }} · {% endif %}
+          {{ conversation.buyer_latitude }}, {{ conversation.buyer_longitude }}
+          {% if conversation.buyer_location_accuracy %}
+            <span class="text-muted">(±{{ conversation.buyer_location_accuracy|floatformat:0 }} m)</span>
           {% endif %}
         </p>
         <a href="{{ conversation.location_map_url }}" target="_blank" rel="noopener noreferrer"
@@ -95,6 +89,7 @@
         </small>
       </div>
       <a href="{% url 'store:pay_invoice' latest_invoice.id %}" class="btn btn-primary btn-sm">Accept &amp; pay</a>
+          <button type="button" class="btn btn-outline-danger btn-sm" onclick="declineInvoice({{ latest_invoice.id }})">Decline</button>
     </div>
     {% endif %}
   {% endif %}
@@ -229,5 +224,18 @@
       .catch(() => {});
   }, 15000);
 })();
+
+<script>
+function declineInvoice(invoiceId) {
+  if (!confirm('Decline this invoice?')) return;
+  fetch(`/invoice/${invoiceId}/decline/`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest'}
+  }).then(r => r.json()).then(data => {
+    if (data.success) window.location.reload();
+    else alert(data.error || 'Could not decline the invoice.');
+  }).catch(() => alert('Could not decline the invoice.'));
+}
+</script>
 </script>
 {% endblock %}

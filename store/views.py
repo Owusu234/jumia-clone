@@ -3998,64 +3998,6 @@ def _notify(user_id, title, message, link):
         logging.getLogger(__name__).exception('Chat notification failed')
 
 
-def _reverse_geocode_chat_location(latitude, longitude):
-    """Return a human-readable town/locality + region for shared chat GPS.
-
-    Uses OpenStreetMap Nominatim. If the lookup is unavailable, the caller can
-    safely fall back to the browser-provided label or coordinates.
-    """
-    import json
-    from urllib.parse import urlencode
-    from urllib.request import Request, urlopen
-
-    try:
-        query = urlencode({
-            'lat': str(latitude),
-            'lon': str(longitude),
-            'format': 'jsonv2',
-            'zoom': '12',
-            'addressdetails': '1',
-            'accept-language': 'en',
-        })
-        request = Request(
-            f'https://nominatim.openstreetmap.org/reverse?{query}',
-            headers={
-                'User-Agent': 'ShopVibe/1.0 (buyer-seller location sharing)',
-                'Accept': 'application/json',
-            },
-        )
-        with urlopen(request, timeout=5) as response:
-            data = json.loads(response.read().decode('utf-8'))
-
-        address = data.get('address') or {}
-        town = (
-            address.get('town')
-            or address.get('city')
-            or address.get('municipality')
-            or address.get('village')
-            or address.get('suburb')
-            or address.get('city_district')
-            or ''
-        ).strip()
-        region = (
-            address.get('state')
-            or address.get('region')
-            or address.get('state_district')
-            or address.get('county')
-            or ''
-        ).strip()
-
-        if town and region:
-            return f'{town}, {region}'
-        return town or region or (data.get('display_name') or '').strip()
-    except Exception:
-        logging.getLogger(__name__).warning(
-            'Reverse geocoding failed for chat location %s, %s', latitude, longitude,
-            exc_info=True,
-        )
-        return ''
-
-
 @login_required
 def start_conversation(req, product_id):
     """Open (or reopen) the buyer's thread with this product's seller."""
@@ -4186,12 +4128,7 @@ def chat_share_location(req, conversation_id):
     conv.buyer_latitude = lat.quantize(Decimal('0.000001'))
     conv.buyer_longitude = lng.quantize(Decimal('0.000001'))
     conv.buyer_location_accuracy = accuracy
-
-    # Convert GPS coordinates into a town/locality + region so the seller
-    # sees a useful place name rather than only raw coordinates.
-    geocoded_label = _reverse_geocode_chat_location(conv.buyer_latitude, conv.buyer_longitude)
-    browser_label = (req.POST.get('label') or '').strip()
-    conv.buyer_location_label = (geocoded_label or browser_label)[:255]
+    conv.buyer_location_label = (req.POST.get('label') or '').strip()[:255]
     conv.location_shared_at = timezone.now()
     conv.save(update_fields=['buyer_latitude', 'buyer_longitude', 'buyer_location_accuracy',
                              'buyer_location_label', 'location_shared_at', 'updated_at'])
@@ -4264,6 +4201,37 @@ def cancel_invoice(req, invoice_id):
     invoice.save(update_fields=['status'])
     ChatMessage.objects.create(conversation=invoice.conversation, sender=req.user,
                                kind=ChatMessage.SYSTEM, body=f'Invoice #{invoice.id} was cancelled.')
+    return JsonResponse({'success': True})
+
+
+@login_required
+@require_POST
+def decline_invoice(req, invoice_id):
+    """Allow the buyer to reject a pending invoice without paying it."""
+    invoice = get_object_or_404(
+        Invoice.objects.select_related('conversation', 'seller', 'buyer', 'product'),
+        id=invoice_id
+    )
+    if invoice.buyer_id != req.user.id:
+        return JsonResponse({'success': False, 'error': 'Only the buyer can decline this invoice.'}, status=403)
+    if invoice.status != Invoice.PENDING:
+        return JsonResponse({'success': False, 'error': 'That invoice is no longer open.'}, status=400)
+
+    invoice.status = Invoice.DECLINED
+    invoice.save(update_fields=['status'])
+
+    ChatMessage.objects.create(
+        conversation=invoice.conversation,
+        sender=req.user,
+        kind=ChatMessage.SYSTEM,
+        body=f'Invoice #{invoice.id} was declined by the buyer.'
+    )
+    _notify(
+        invoice.seller.user_id,
+        '🧾 Invoice declined',
+        f'{req.user.username} declined invoice #{invoice.id} for {invoice.product.name}.',
+        reverse('store:chat_thread', args=[invoice.conversation_id])
+    )
     return JsonResponse({'success': True})
 
 
