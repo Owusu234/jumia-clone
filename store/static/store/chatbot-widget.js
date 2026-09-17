@@ -10,7 +10,7 @@
 
   // Remove any legacy floating launcher left in the DOM by an older cached
   // chatbot script. The navigation buttons are the only supported launchers.
-  document.querySelectorAll("#sv-chat-bubble").forEach((el) => el.remove());
+  document.querySelectorAll("#sv-chat-bubble, .sv-chat-bubble, .chatbot-fab, .ai-chat-fab, #backToTop, .back-to-top").forEach((el) => el.remove());
 
   const panel = document.createElement("div");
   panel.id = "sv-chat-panel";
@@ -87,8 +87,16 @@
     toggleChat();
   });
 
-  mobileChatBtn?.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
-  desktopChatBtn?.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+  mobileChatBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleChat();
+  });
+  desktopChatBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleChat();
+  });
   closeBtn.addEventListener("click", () => {
     panel.classList.remove("open");
     mobileChatBtn?.classList.remove("active");
@@ -108,7 +116,7 @@
 
   // Defensive cleanup against an older cached script creating the legacy bubble.
   const bubbleGuard = new MutationObserver(() => {
-    document.querySelectorAll("#sv-chat-bubble").forEach((el) => el.remove());
+    document.querySelectorAll("#sv-chat-bubble, .sv-chat-bubble, .chatbot-fab, .ai-chat-fab, #backToTop, .back-to-top").forEach((el) => el.remove());
   });
   bubbleGuard.observe(document.body, { childList: true });
 
