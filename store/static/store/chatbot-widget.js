@@ -1,18 +1,12 @@
-/* ShopVibe AI Recommendation Chatbot — widget logic
-   Include after chatbot-widget.css and this <script> on any page
-   (e.g. base.html) where you want the chat bubble to appear. */
+/* ShopVibe AI Recommendation Chatbot — shared chat panel.
+   Desktop launcher: sidebar Chat item.
+   Mobile launcher: bottom navigation Chat item.
+   No floating action button is created anywhere. */
 
 (function () {
-  const ENDPOINT = "/api/chatbot/recommend/"; // matches chatbot_urls_snippet.py
-
-  // ---- Build DOM ----
-  // The mobile bottom navigation contains the launcher. Desktop uses the
-  // floating bubble. Keep one shared panel/functionality for both.
+  const ENDPOINT = "/api/chatbot/recommend/";
   const mobileChatBtn = document.getElementById("sv-mobile-chat-button");
-
-  const bubble = document.createElement("div");
-  bubble.id = "sv-chat-bubble";
-  bubble.innerText = "💬";
+  const desktopChatBtn = document.getElementById("sv-desktop-chat-button");
 
   const panel = document.createElement("div");
   panel.id = "sv-chat-panel";
@@ -22,7 +16,7 @@
         Shopping Assistant
         <span class="sub">Tell me what you're looking for</span>
       </div>
-      <div id="sv-chat-close">&times;</div>
+      <div id="sv-chat-close" role="button" tabindex="0" aria-label="Close chat">&times;</div>
     </div>
     <div id="sv-chat-messages"></div>
     <div id="sv-chat-input-row">
@@ -31,207 +25,68 @@
       <button id="sv-chat-send">Send</button>
     </div>
   `;
-
-  document.body.appendChild(bubble);
   document.body.appendChild(panel);
-
-  // Do not expose the floating launcher on phones. The bottom-nav Chat item
-  // is the only mobile launcher. This also protects against stale CSS caches.
-  if (window.innerWidth <= 767) {
-    bubble.style.display = "none";
-    bubble.style.visibility = "hidden";
-    bubble.style.pointerEvents = "none";
-  }
 
   const messagesEl = panel.querySelector("#sv-chat-messages");
   const inputEl = panel.querySelector("#sv-chat-input");
   const sendBtn = panel.querySelector("#sv-chat-send");
   const closeBtn = panel.querySelector("#sv-chat-close");
   const micBtn = panel.querySelector("#sv-chat-mic");
-
   let history = [];
   let greeted = false;
 
-  // ---- Draggable bubble ----
-  // Lets the user reposition the launcher anywhere on screen; the spot is
-  // remembered (per browser) so it stays put on the next visit.
-  const POSITION_KEY = "sv_chat_bubble_pos";
-  const DRAG_THRESHOLD = 6; // px before a press counts as a drag instead of a click
-  const EDGE_GAP = 8;
-
-  let dragPointerId = null;
-  let dragMoved = false;
-  let dragStartX = 0, dragStartY = 0, bubbleStartLeft = 0, bubbleStartTop = 0;
-
-  function clamp(val, min, max) {
-    return Math.max(min, Math.min(max, val));
-  }
-
-  function placeBubble(left, top) {
-    const w = bubble.offsetWidth || 60;
-    const h = bubble.offsetHeight || 60;
-    left = clamp(left, EDGE_GAP, Math.max(EDGE_GAP, window.innerWidth - w - EDGE_GAP));
-    top = clamp(top, EDGE_GAP, Math.max(EDGE_GAP, window.innerHeight - h - EDGE_GAP));
-    bubble.style.left = left + "px";
-    bubble.style.top = top + "px";
-    bubble.style.right = "auto";
-    bubble.style.bottom = "auto";
-    return { left, top };
-  }
-
-  function positionPanelNearBubble() {
-    const bRect = bubble.getBoundingClientRect();
-    const panelWidth = Math.min(340, window.innerWidth * 0.92);
-    const panelHeight = Math.min(460, window.innerHeight * 0.75);
-    const gap = 14;
-
-    // On phones, keep the assistant and its panel in the upper-right so the
-    // bottom cart/tab navigation remains completely unobstructed.
-    if (window.innerWidth <= 767) {
-      const top = Math.min(
-        window.innerHeight - panelHeight - EDGE_GAP,
-        Math.max(82 + (window.visualViewport?.offsetTop || 0), bRect.bottom + gap)
-      );
-      const left = clamp(
-        bRect.right - panelWidth,
-        EDGE_GAP,
-        Math.max(EDGE_GAP, window.innerWidth - panelWidth - EDGE_GAP)
-      );
-      panel.style.left = left + "px";
-      panel.style.top = top + "px";
-      panel.style.right = "auto";
-      panel.style.bottom = "auto";
-      return;
-    }
-
-    let top = bRect.top - gap - panelHeight;
-    if (top < EDGE_GAP) top = Math.min(bRect.bottom + gap, window.innerHeight - panelHeight - EDGE_GAP);
-    top = clamp(top, EDGE_GAP, Math.max(EDGE_GAP, window.innerHeight - panelHeight - EDGE_GAP));
-
-    let left = bRect.right - panelWidth;
-    left = clamp(left, EDGE_GAP, Math.max(EDGE_GAP, window.innerWidth - panelWidth - EDGE_GAP));
-
-    panel.style.left = left + "px";
-    panel.style.top = top + "px";
+  function positionDesktopPanel() {
+    if (!desktopChatBtn || window.innerWidth <= 767) return;
+    const r = desktopChatBtn.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth * 0.92);
+    const height = Math.min(500, window.innerHeight * 0.78);
+    let left = r.right + 14;
+    if (left + width > window.innerWidth - 12) left = r.left;
+    let top = r.top;
+    top = Math.max(12, Math.min(top, window.innerHeight - height - 12));
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
     panel.style.right = "auto";
     panel.style.bottom = "auto";
   }
 
-  function savePosition(left, top) {
-    try {
-      localStorage.setItem(POSITION_KEY, JSON.stringify({ left, top }));
-    } catch (err) {
-      /* localStorage unavailable (private mode etc.) — position just won't persist */
-    }
+  function positionMobilePanel() {
+    if (window.innerWidth > 767) return;
+    panel.style.left = "8px";
+    panel.style.right = "8px";
+    panel.style.top = "auto";
+    panel.style.bottom = "calc(74px + env(safe-area-inset-bottom))";
   }
-
-  function restorePosition() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(POSITION_KEY) || "null");
-      if (saved && typeof saved.left === "number" && typeof saved.top === "number") {
-        placeBubble(saved.left, saved.top);
-      }
-    } catch (err) {
-      /* ignore malformed/unavailable storage */
-    }
-  }
-
-  bubble.addEventListener("pointerdown", (e) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    dragPointerId = e.pointerId;
-    dragMoved = false;
-    const rect = bubble.getBoundingClientRect();
-    bubbleStartLeft = rect.left;
-    bubbleStartTop = rect.top;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    e.preventDefault();
-  });
-
-  // Listen on window (not the bubble itself) for move/up: this way the drag
-  // keeps tracking even once the pointer moves faster than the bubble and
-  // ends up outside its 60x60 box — no dependency on setPointerCapture,
-  // which isn't reliably supported everywhere.
-  window.addEventListener("pointermove", (e) => {
-    if (dragPointerId === null || dragPointerId !== e.pointerId) return;
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
-    if (!dragMoved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
-      dragMoved = true;
-      bubble.classList.add("sv-dragging");
-    }
-    if (dragMoved) {
-      placeBubble(bubbleStartLeft + dx, bubbleStartTop + dy);
-      if (panel.classList.contains("open")) positionPanelNearBubble();
-    }
-  });
-
-  function endDrag(e) {
-    if (dragPointerId === null || dragPointerId !== e.pointerId) return;
-    dragPointerId = null;
-    bubble.classList.remove("sv-dragging");
-    if (dragMoved) {
-      const rect = bubble.getBoundingClientRect();
-      savePosition(rect.left, rect.top);
-    }
-  }
-  window.addEventListener("pointerup", endDrag);
-  window.addEventListener("pointercancel", endDrag);
-
-  window.addEventListener("resize", () => {
-    if (window.innerWidth <= 767) {
-      bubble.style.display = "none";
-      bubble.style.visibility = "hidden";
-      bubble.style.pointerEvents = "none";
-    } else {
-      bubble.style.display = "flex";
-      bubble.style.visibility = "visible";
-      bubble.style.pointerEvents = "auto";
-      const rect = bubble.getBoundingClientRect();
-      if (bubble.style.left) placeBubble(rect.left, rect.top);
-    }
-    if (panel.classList.contains("open") && window.innerWidth > 767) positionPanelNearBubble();
-  });
-
-  restorePosition();
 
   function toggleChat() {
-    panel.classList.toggle("open");
-    mobileChatBtn?.classList.toggle("active", panel.classList.contains("open"));
-    if (panel.classList.contains("open")) {
-      // On mobile the panel is positioned by CSS above the bottom nav.
-      // On desktop it remains anchored near the floating bubble.
-      if (window.innerWidth > 767) positionPanelNearBubble();
-      if (!greeted) {
-        addBotMessage("Welcome. Tell me what you are looking for, and I will recommend relevant products from the store.");
-        greeted = true;
-      }
-      setTimeout(() => inputEl.focus(), 0);
+    const willOpen = !panel.classList.contains("open");
+    panel.classList.toggle("open", willOpen);
+    mobileChatBtn?.classList.toggle("active", willOpen);
+    desktopChatBtn?.classList.toggle("active", willOpen);
+    if (!willOpen) return;
+    if (window.innerWidth <= 767) positionMobilePanel();
+    else positionDesktopPanel();
+    if (!greeted) {
+      addBotMessage("Hi! Tell me what you're shopping for and I'll suggest a few things from the store.");
+      greeted = true;
     }
+    setTimeout(() => inputEl.focus(), 0);
   }
 
-  bubble.addEventListener("click", (e) => {
-    // A drag that just ended fires a click right after pointerup — swallow it
-    // so dragging the bubble doesn't also toggle the chat panel open/closed.
-    if (dragMoved) {
-      dragMoved = false;
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    toggleChat();
-  });
-
-  // Mobile launcher: use the Chat item in the bottom navigation instead of
-  // the floating bubble. It opens the exact same assistant panel.
-  mobileChatBtn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    toggleChat();
-  });
-
+  mobileChatBtn?.addEventListener("click", (e) => { e.preventDefault(); toggleChat(); });
+  desktopChatBtn?.addEventListener("click", (e) => { e.preventDefault(); toggleChat(); });
   closeBtn.addEventListener("click", () => {
     panel.classList.remove("open");
     mobileChatBtn?.classList.remove("active");
+    desktopChatBtn?.classList.remove("active");
+  });
+  closeBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") closeBtn.click();
+  });
+  window.addEventListener("resize", () => {
+    if (!panel.classList.contains("open")) return;
+    if (window.innerWidth <= 767) positionMobilePanel();
+    else positionDesktopPanel();
   });
 
   function addUserMessage(text) {
@@ -263,7 +118,7 @@
         <img src="${p.image_url || ""}" alt="${escapeHtml(p.name || "")}" />
         <div class="info">
           <div class="name">${escapeHtml(p.name || "")}</div>
-          <div class="price">${p.price != null ? "GH₵" + p.price : ""}</div>
+          <div class="price">${p.price != null ? "$" + p.price : ""}</div>
         </div>
       `;
       wrap.appendChild(a);

@@ -1,32 +1,5 @@
 /* ShopVibe AI Recommendation Chatbot — widget styles */
 
-#sv-chat-bubble {
-  position: fixed;
-  bottom: 32px;
-  right: 24px;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: #1a1a1a;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-  z-index: 9999;
-  font-size: 26px;
-  transition: transform 0.15s ease;
-  touch-action: none; /* let JS handle the drag gesture instead of the browser */
-  user-select: none;
-}
-#sv-chat-bubble:hover { transform: scale(1.06); }
-#sv-chat-bubble.sv-dragging {
-  cursor: grabbing;
-  transform: scale(1.08);
-  transition: none;
-}
-
 #sv-chat-panel {
   position: fixed;
   bottom: 104px;
@@ -42,27 +15,27 @@
   flex-direction: column;
   overflow: hidden;
   z-index: 9999;
-  font-family: var(--font-body, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 #sv-chat-panel.open { display: flex; }
 
-/* Mobile: the assistant is launched from the bottom navigation bar instead
-   of using a floating button. The chat panel opens just above the nav. */
+/* Chat is launched from navigation/sidebar; no floating launcher exists. */
 @media (max-width: 767px) {
-  #sv-chat-bubble, #sv-chat-bubble * {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
   #sv-chat-panel {
-    top: auto !important;
     left: 8px !important;
     right: 8px !important;
+    top: auto !important;
     bottom: calc(74px + env(safe-area-inset-bottom)) !important;
     width: auto !important;
     max-width: none !important;
     max-height: calc(100dvh - 92px - env(safe-area-inset-bottom));
   }
+  .desktop-chat-item { display: none !important; }
+}
+
+.desktop-chat-item a.active {
+  background: rgba(246,139,30,0.10);
+  color: var(--p) !important;
 }
 
 

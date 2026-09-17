@@ -17,8 +17,8 @@
     <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <!-- ShopVibe Design System (all theming lives here now) -->
-    <link href="{% static 'store/theme.css' %}?v=3" rel="stylesheet">
-    <link href="{% static 'store/theme_fixes.css' %}?v=3" rel="stylesheet">
+    <link href="{% static 'store/theme.css' %}?v=4" rel="stylesheet">
+    <link href="{% static 'store/theme_fixes.css' %}?v=4" rel="stylesheet">
 
     {% block extra_css %}{% endblock %}
 </head>
@@ -196,6 +196,7 @@
             <ul class="category-list">
                 <li><a href="{% url 'store:home' %}" class="{% if not request.GET.category %}active{% endif %}"><i class="bi bi-grid"></i> All Products</a></li>
                 <li><a href="{% url 'store:community_highlights' %}" class="{% if request.resolver_match.url_name == 'community_highlights' %}active{% endif %}"><i class="bi bi-camera"></i> Community Highlights</a></li>
+                <li class="desktop-chat-item"><a href="#" id="sv-desktop-chat-button" aria-label="Open Shopping Assistant"><i class="bi bi-chat-dots"></i> Chat</a></li>
 
                 <li class="divider">Phones & Tech</li>
                 <li><a href="{% url 'store:home' %}?category=smartphones"><i class="bi bi-phone"></i> Smartphones</a></li>
