@@ -29,6 +29,7 @@ from datetime import timezone as dt_timezone
 from django.views.decorators.http import require_POST
 from django.db import transaction, IntegrityError
 from django.contrib.auth import login
+from django.core.mail import send_mail
 
 # ==================== AI CHATBOT (OpenRouter) ====================
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -37,7 +38,7 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-from .models import Product, Category, Cart, CartItem, SharedCartLink, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
+from .models import Product, Category, Cart, CartItem, SharedCartLink, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
 from django.core.files.base import ContentFile
 from django.http import JsonResponse
@@ -819,6 +820,151 @@ def stop_sharing_cart(req):
     return redirect('store:cart')
 
 
+# ==================== LINKED SHARED CARTS (accounts, not just links) ====================
+
+def _active_links_for(user):
+    """Accepted CartInvite rows where `user` is either side."""
+    return CartInvite.objects.filter(
+        Q(inviter=user) | Q(invitee=user), status='accepted'
+    ).select_related('inviter', 'invitee')
+
+def get_linked_users(user):
+    """Every account currently linked (accepted) to this user's cart."""
+    linked = []
+    for link in _active_links_for(user):
+        other = link.other_party(user)
+        if other:
+            linked.append(other)
+    return linked
+
+def _accept_cart_invite(invite, user):
+    """Shared accept logic used by the in-app Accept button and the emailed link."""
+    if invite.invitee_id and invite.invitee_id != user.id:
+        return False
+    invite.invitee = user
+    invite.status = 'accepted'
+    invite.responded_at = timezone.now()
+    invite.save(update_fields=['invitee', 'status', 'responded_at'])
+    UserNotification.objects.create(
+        user=invite.inviter, title='Cart link accepted',
+        message=f"{user.username} accepted your cart link invitation.",
+        link=reverse('store:cart'),
+    )
+    return True
+
+@login_required
+@require_POST
+def invite_to_cart(req):
+    """Send a 'Linked Shared Carts' invitation — by username (if they already
+    have an account) or by email (if they don't yet). Either way an email
+    with an accept link is sent, since the account-based invitee may not
+    check in-app notifications."""
+    identifier = (req.POST.get('identifier') or '').strip()
+    relation = req.POST.get('relation') or 'other'
+    if relation not in dict(CartInvite.RELATION_CHOICES):
+        relation = 'other'
+    if not identifier:
+        return JsonResponse({'success': False, 'error': 'Enter a username or email address.'}, status=400)
+
+    target = User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier)).exclude(id=req.user.id).first()
+    if not target and '@' not in identifier:
+        return JsonResponse({'success': False, 'error': "We couldn't find that account."}, status=404)
+
+    recipient_email = target.email if target else identifier
+    if not recipient_email:
+        return JsonResponse({'success': False, 'error': 'That account has no email address on file.'}, status=400)
+
+    # Already linked or already invited (either direction)?
+    existing = CartInvite.objects.filter(
+        Q(inviter=req.user, invitee=target) | Q(inviter=target, invitee=req.user)
+    ).filter(status__in=['pending', 'accepted']).first() if target else None
+    if existing:
+        if existing.status == 'accepted':
+            return JsonResponse({'success': False, 'error': 'That account is already linked to your cart.'}, status=400)
+        return JsonResponse({'success': False, 'error': 'An invitation is already pending with that account.'}, status=400)
+
+    invite = CartInvite.objects.create(
+        inviter=req.user, invitee=target,
+        invited_email='' if target else identifier,
+        relation=relation,
+    )
+
+    accept_url = req.build_absolute_uri(reverse('store:accept_invite_via_email', args=[invite.token]))
+    try:
+        send_mail(
+            subject=f"{req.user.username} wants to link shopping carts with you on ShopVibe",
+            message=(
+                f"{req.user.username} invited you to link carts as their {invite.get_relation_display()} "
+                f"on ShopVibe, for live collaborative shopping.\n\n"
+                f"Accept the invitation here: {accept_url}\n\n"
+                f"If you weren't expecting this, you can ignore this email."
+            ),
+            from_email=None,
+            recipient_list=[recipient_email],
+            fail_silently=False,
+        )
+    except Exception:
+        invite.delete()
+        return JsonResponse({'success': False, 'error': 'Could not send the invite email right now. Please try again later.'}, status=502)
+
+    if target:
+        UserNotification.objects.create(
+            user=target, title='Cart link invitation',
+            message=f"{req.user.username} wants to link carts with you ({invite.get_relation_display()}).",
+            link=reverse('store:cart'),
+        )
+    return JsonResponse({'success': True, 'invite': {
+        'id': invite.id,
+        'name': target.username if target else invite.invited_email,
+        'relation': invite.get_relation_display(),
+        'status': invite.status,
+    }})
+
+@login_required
+@require_POST
+def respond_cart_invite(req, invite_id, action):
+    invite = get_object_or_404(CartInvite, id=invite_id, invitee=req.user, status='pending')
+    if action not in ('accept', 'decline'):
+        return JsonResponse({'success': False, 'error': 'Invalid action.'}, status=400)
+    if action == 'accept':
+        _accept_cart_invite(invite, req.user)
+    else:
+        invite.status = 'declined'
+        invite.responded_at = timezone.now()
+        invite.save(update_fields=['status', 'responded_at'])
+    UserNotification.objects.create(
+        user=invite.inviter, title='Cart link ' + ('accepted' if action == 'accept' else 'declined'),
+        message=f"{req.user.username} {'accepted' if action == 'accept' else 'declined'} your cart link invitation.",
+        link=reverse('store:cart'),
+    )
+    return JsonResponse({'success': True, 'status': invite.status})
+
+@login_required
+@require_POST
+def cancel_cart_invite(req, invite_id):
+    """Cancel a pending invite you sent, or unlink an already-accepted account."""
+    invite = get_object_or_404(
+        CartInvite.objects.filter(Q(inviter=req.user) | Q(invitee=req.user)), id=invite_id
+    )
+    invite.delete()
+    return JsonResponse({'success': True})
+
+def accept_invite_via_email(req, token):
+    """Landing page for the link emailed to an invitee. If they're logged in
+    already, accept immediately; otherwise stash the token and finish the
+    job the next time they load the cart (right after login/register)."""
+    invite = get_object_or_404(CartInvite, token=token, status='pending')
+    if req.user.is_authenticated:
+        if _accept_cart_invite(invite, req.user):
+            messages.success(req, f"🔗 You're now linked with {invite.inviter.username}'s cart.")
+        else:
+            messages.error(req, "This invitation was meant for a different account.")
+        return redirect(f"{reverse('store:cart')}?tab=shared")
+    req.session['pending_cart_invite_token'] = str(invite.token)
+    req.session.modified = True
+    messages.info(req, "Please log in or create an account to accept this cart link invitation.")
+    return redirect('store:login')
+
 def _cart_key(product_id, color='', size=''):
     return f"{product_id}::{str(color or '').strip()}::{str(size or '').strip()}"
 
@@ -908,9 +1054,44 @@ def cart(req):
     link = req.user.shared_cart_links.filter(is_active=True).first()
     share_url = (req.build_absolute_uri(reverse('store:shared_cart', args=[link.token]))
                  if link else None)
+
+    # ---- Linked Shared Carts ----
+    pending_token = req.session.pop('pending_cart_invite_token', None)
+    if pending_token:
+        req.session.modified = True
+        pending_invite = CartInvite.objects.filter(token=pending_token, status='pending').first()
+        if pending_invite and _accept_cart_invite(pending_invite, req.user):
+            messages.success(req, f"🔗 You're now linked with {pending_invite.inviter.username}'s cart.")
+
+    active_invites = list(_active_links_for(req.user)) if req.user.is_authenticated else []
+    pending_sent = list(CartInvite.objects.filter(inviter=req.user, status='pending')) if req.user.is_authenticated else []
+    pending_received = list(CartInvite.objects.filter(invitee=req.user, status='pending')) if req.user.is_authenticated else []
+
+    active_links = []
+    shared_items, shared_total, shared_count = [], Decimal('0.00'), 0
+    for invite in active_invites:
+        other = invite.other_party(req.user)
+        if not other:
+            continue
+        active_links.append({'invite': invite, 'user': other, 'relation': invite.get_relation_display()})
+        try:
+            other_cart = other.cart
+        except Cart.DoesNotExist:
+            continue
+        for ci in other_cart.items.select_related('product').filter(product__is_active=True):
+            subtotal = ci.product.price * Decimal(str(ci.quantity))
+            shared_items.append({'item': ci, 'owner': other, 'relation': invite.get_relation_display(), 'subtotal': subtotal})
+            shared_total += subtotal
+            shared_count += ci.quantity
+
     return render(req, 'store/cart.html', {
         'cart_items': cart_items, 'cart_total': cart_total, 'cart_count': cart_count,
         'share_url': share_url,
+        'active_links': active_links,
+        'pending_sent': pending_sent,
+        'pending_received': pending_received,
+        'shared_items': shared_items, 'shared_total': shared_total, 'shared_count': shared_count,
+        'relation_choices': CartInvite.RELATION_CHOICES,
     })
 
 

@@ -417,6 +417,48 @@ class SharedCartLink(models.Model):
         return f"Shared cart link for {self.owner.username}"
 
 
+class CartInvite(models.Model):
+    """A live, bi-directional link between two accounts' carts — 'Linked
+    Shared Carts'. Once accepted, both sides can see and add to each
+    other's shared cart. Started as a pending invite carrying a
+    relational tag (spouse, parent, friend, etc.) chosen by the sender."""
+    RELATION_CHOICES = [
+        ('spouse', 'Spouse'),
+        ('parent', 'Parent'),
+        ('business_partner', 'Business Partner'),
+        ('friend', 'Friend'),
+        ('sibling', 'Sibling'),
+        ('other', 'Other'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('declined', 'Declined'),
+    ]
+    inviter = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_cart_invites')
+    invitee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_cart_invites', null=True, blank=True)
+    invited_email = models.EmailField(blank=True, default='')
+    relation = models.CharField(max_length=20, choices=RELATION_CHOICES, default='other')
+    token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def other_party(self, user):
+        return self.invitee if user == self.inviter else self.inviter
+
+    def get_relation_display_for(self, user):
+        """The relation is defined from the inviter's point of view."""
+        return self.get_relation_display()
+
+    def __str__(self):
+        who = self.invitee.username if self.invitee else self.invited_email
+        return f"{self.inviter.username} → {who} ({self.get_status_display()})"
+
+
 # ==================== ORDERS & TRACKING ====================
 
 class Order(models.Model):
