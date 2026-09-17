@@ -41,7 +41,49 @@
 .community-notice > a { margin-left: auto; flex: 0 0 auto; }
 
 .community-sidebar { display: grid; gap: 16px; position: sticky; top: 88px; }
-.community-side-card { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.community-side-card { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.community-sidebar > .community-side-card:first-child { 
+    padding: 15px; 
+    border-radius: 14px;
+}
+.community-sidebar > .community-side-card:first-child .side-card-heading { 
+    margin-bottom: 11px; 
+    align-items: center;
+}
+.community-sidebar > .community-side-card:first-child .side-card-heading h3 { 
+    font-size: .95rem; 
+}
+.community-sidebar > .community-side-card:first-child .reward-list { 
+    grid-template-columns: repeat(3, minmax(0, 1fr)); 
+    gap: 7px;
+}
+.community-sidebar > .community-side-card:first-child .reward-item { 
+    min-width: 0;
+    min-height: 62px;
+    padding: 9px 6px;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    gap: 4px;
+    border-radius: 10px;
+}
+.community-sidebar > .community-side-card:first-child .reward-item span {
+    display: block;
+    font-size: .68rem;
+    line-height: 1.2;
+}
+.community-sidebar > .community-side-card:first-child .reward-item i {
+    display: block;
+    margin: 0 0 2px;
+}
+.community-sidebar > .community-side-card:first-child .reward-item strong {
+    font-size: .78rem;
+}
+.community-sidebar > .community-side-card:first-child .side-note {
+    margin-top: 10px;
+    font-size: .7rem;
+    line-height: 1.45;
+}
 .side-card-heading { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 15px; }
 .side-card-heading h3 { margin: 4px 0 0; font-size: 1rem; }
 .side-card-heading > i { color: var(--primary); font-size: 1.15rem; }
