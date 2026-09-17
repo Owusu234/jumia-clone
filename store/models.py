@@ -1057,6 +1057,8 @@ class ChatMessage(models.Model):
     body = models.TextField(blank=True, default='')
     invoice = models.ForeignKey('Invoice', null=True, blank=True, on_delete=models.CASCADE, related_name="messages")
     is_read = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -4016,7 +4016,8 @@ def _chat_message_payload(msg, viewer):
     return {
         'id': msg.id,
         'kind': msg.kind,
-        'body': msg.body,
+        'body': msg.body if not msg.is_deleted else '',
+        'deleted': bool(msg.is_deleted),
         'mine': bool(msg.sender_id and msg.sender_id == viewer.id),
         'sender': msg.sender.username if msg.sender else 'System',
         'created_at': timezone.localtime(msg.created_at).strftime('%d %b, %H:%M'),
@@ -4077,7 +4078,7 @@ def chat_inbox(req):
             'conversation': conv,
             'is_seller_side': conv.seller.user_id == req.user.id,
             'counterparty': conv.other_party(req.user),
-            'last_message': conv.messages.last(),
+            'last_message': conv.messages.filter(is_deleted=False).last(),
             'unread': conv.unread_count_for(req.user),
         })
     return render(req, 'store/chat_inbox.html', {'threads': threads})
@@ -4130,14 +4131,8 @@ def chat_send(req, conversation_id):
         return JsonResponse({'success': False, 'error': 'Message is too long.'}, status=400)
 
     is_buyer = conv.buyer_id == req.user.id
-    if is_buyer and not conv.has_location:
-        # The seller quotes delivery from the buyer's location, so the buyer
-        # shares it before the conversation can start.
-        return JsonResponse({
-            'success': False,
-            'code': 'location_required',
-            'error': 'Share your location so the seller can work out your delivery fee.',
-        }, status=400)
+    # Location is optional during normal conversation. The buyer can chat
+    # freely and only shares a region + town when they are ready to purchase.
 
     msg = ChatMessage.objects.create(conversation=conv, sender=req.user, body=body)
     conv.save(update_fields=['updated_at'])
@@ -4147,6 +4142,23 @@ def chat_send(req, conversation_id):
             body[:120], reverse('store:chat_thread', args=[conv.id]))
 
     return JsonResponse({'success': True, 'message': _chat_message_payload(msg, req.user)})
+
+
+@login_required
+@require_POST
+def chat_delete_message(req, conversation_id, message_id):
+    """Soft-delete one message authored by the current buyer or seller."""
+    conv = _get_conversation_or_404(req.user, conversation_id)
+    msg = get_object_or_404(ChatMessage, id=message_id, conversation=conv)
+    if msg.sender_id != req.user.id:
+        return JsonResponse({'success': False, 'error': 'You can only delete your own messages.'}, status=403)
+    if msg.is_deleted:
+        return JsonResponse({'success': True, 'message_id': msg.id})
+    msg.is_deleted = True
+    msg.deleted_at = timezone.now()
+    msg.body = ''
+    msg.save(update_fields=['is_deleted', 'deleted_at', 'body'])
+    return JsonResponse({'success': True, 'message_id': msg.id})
 
 
 @login_required
@@ -4190,6 +4202,15 @@ def issue_invoice(req, conversation_id):
     conv = _get_conversation_or_404(req.user, conversation_id)
     if conv.seller.user_id != req.user.id:
         return JsonResponse({'success': False, 'error': 'Only the seller can issue an invoice.'}, status=403)
+
+    # A delivery quote can only be prepared after the buyer has voluntarily
+    # supplied the region and town. This does not restrict ordinary chat.
+    if not conv.has_location:
+        return JsonResponse({
+            'success': False,
+            'code': 'location_required_for_invoice',
+            'error': 'Ask the buyer to share their region and town before sending the invoice so you can add the delivery fee.',
+        }, status=400)
 
     try:
         unit_price = Decimal(str(req.POST.get('unit_price'))).quantize(Decimal('0.01'))
