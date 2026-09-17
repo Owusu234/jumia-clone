@@ -749,7 +749,8 @@ def start_shared_cart_purchase(req, token, action):
 
     if is_all:
         items_qs = list(
-            link.owner.cart.items.select_related('product').filter(product__is_active=True)
+            link.owner.cart.items.select_related('product').filter(
+                product__is_active=True, is_shared=True)
         )
         if not items_qs:
             messages.error(req, 'This shared cart is empty.')
@@ -757,12 +758,24 @@ def start_shared_cart_purchase(req, token, action):
         items = items_qs
     else:
         item_id = req.POST.get('item_id')
+        # is_shared=True here too: a private item must not be purchasable even
+        # if someone guesses or replays its id.
         item = get_object_or_404(
             CartItem.objects.select_related('product', 'cart__user'),
-            id=item_id, cart__user=link.owner, product__is_active=True
+            id=item_id, cart__user=link.owner, product__is_active=True, is_shared=True
         )
         items = [item]
 
+    return _stage_shared_purchase(
+        req, link.owner, items, purchase_action, is_all,
+        token=str(token),
+        fallback_url=reverse('store:shared_cart', args=[token]),
+    )
+
+
+def _stage_shared_purchase(req, owner, items, purchase_action, is_all,
+                           token=None, fallback_url=None):
+    """Put the selected shared-cart items into the payer's checkout session."""
     # Validate stock before starting checkout so the payer does not reach
     # Paystack only to discover that one of the selected items is unavailable.
     for item in items:
@@ -771,7 +784,7 @@ def start_shared_cart_purchase(req, token, action):
                 req,
                 f'Sorry, there is not enough stock available for {item.product.name}.'
             )
-            return redirect('store:shared_cart', token=token)
+            return redirect(fallback_url or reverse('store:cart'))
 
     checkout_cart = {}
     source_item_ids = []
@@ -786,13 +799,13 @@ def start_shared_cart_purchase(req, token, action):
     # into a shared-cart purchase.
     req.session['cart'] = checkout_cart
     req.session['shared_purchase'] = {
-        'owner_id': link.owner_id,
+        'owner_id': owner.id,
         'payer_id': req.user.id if req.user.is_authenticated else None,
         'action': purchase_action,
         'source_item_ids': source_item_ids,
         'source_item_id': source_item_ids[0] if len(source_item_ids) == 1 else None,
         'purchase_all': is_all,
-        'token': str(token),
+        'token': token,
     }
     req.session.modified = True
     return redirect('store:checkout')
@@ -803,7 +816,9 @@ def shared_cart(req, token):
     private: bought items simply vanish from this view."""
     link = get_object_or_404(SharedCartLink, token=token, is_active=True)
     items, total = [], Decimal('0.00')
-    for ci in link.owner.cart.items.select_related('product'):
+    # Only items the owner has explicitly marked as shared are visible here —
+    # the rest of their cart stays private.
+    for ci in link.owner.cart.items.select_related('product').filter(is_shared=True):
         if not ci.product.is_active:
             continue
         subtotal = ci.product.price * Decimal(str(ci.quantity))
@@ -811,6 +826,120 @@ def shared_cart(req, token):
         items.append({'item': ci, 'subtotal': subtotal})
     return render(req, 'store/shared_cart.html',
                   {'link': link, 'items': items, 'total': total})
+
+@login_required
+@require_POST
+def toggle_cart_item_shared(req):
+    """Flip one of the user's own cart items between private and shared.
+
+    The personal cart is the source of truth for what the user is buying; the
+    shared cart shows only the subset they choose to expose. Accepts either a
+    session cart key (`cart_key`) or a CartItem id (`item_id`)."""
+    cart, _ = Cart.objects.get_or_create(user=req.user)
+    item = None
+
+    item_id = req.POST.get('item_id')
+    if item_id:
+        item = CartItem.objects.filter(cart=cart, id=item_id).first()
+    else:
+        cart_key = str(req.POST.get('cart_key') or '')
+        try:
+            pid, color, size = _parse_cart_key(cart_key)
+            product = Product.objects.get(id=int(_parse_cart_key(pid)[0]))
+            color, size = _normalise_variant(product, color, size)
+            item, _ = CartItem.objects.get_or_create(
+                cart=cart, product=product, color=color, size=size,
+                defaults={'quantity': 1, 'added_by': req.user})
+        except (Product.DoesNotExist, ValueError, TypeError):
+            item = None
+
+    if not item:
+        return JsonResponse({'success': False, 'error': 'Item not in your cart.'}, status=404)
+
+    raw = req.POST.get('is_shared')
+    item.is_shared = (raw.lower() in ('1', 'true', 'on', 'yes')) if raw is not None else (not item.is_shared)
+    item.save(update_fields=['is_shared'])
+
+    if req.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse({'success': True, 'is_shared': item.is_shared})
+    messages.success(
+        req,
+        '👀 Item added to your shared cart.' if item.is_shared
+        else '🔒 Item hidden from your shared cart.')
+    return redirect('store:cart')
+
+
+def _visible_shared_item(req, item_id, token=None):
+    """Fetch a shared cart item the requester is allowed to act on: either it
+    is exposed through the share link `token`, or its owner is linked to the
+    requester's account. Private items are never returned."""
+    qs = CartItem.objects.select_related('product', 'cart__user').filter(
+        id=item_id, is_shared=True, product__is_active=True)
+    if token:
+        link = SharedCartLink.objects.filter(token=token, is_active=True).first()
+        if not link:
+            return None
+        return qs.filter(cart__user=link.owner).first()
+    if not req.user.is_authenticated:
+        return None
+    owner_ids = [u.id for u in get_linked_users(req.user)]
+    return qs.filter(cart__user_id__in=owner_ids).first()
+
+
+@require_POST
+def add_shared_item_to_cart(req, item_id):
+    """Copy an item from someone's shared cart into the viewer's own cart."""
+    token = req.POST.get('token') or None
+    item = _visible_shared_item(req, item_id, token)
+    if not item:
+        messages.error(req, 'That item is no longer available.')
+        return redirect(req.META.get('HTTP_REFERER') or reverse('store:cart'))
+
+    product = item.product
+    if product.stock <= 0:
+        messages.warning(req, 'This product is out of stock.')
+        return redirect(req.META.get('HTTP_REFERER') or reverse('store:cart'))
+
+    color, size = _normalise_variant(product, item.color, item.size)
+    cart = req.session.get('cart', {})
+    if not isinstance(cart, dict):
+        cart = {}
+    key = _cart_key(product.id, color, size)
+    existing = cart.get(key, {})
+    current_qty = existing.get('quantity', 0) if isinstance(existing, dict) else existing
+    try:
+        current_qty = max(0, int(float(current_qty)))
+    except (TypeError, ValueError):
+        current_qty = 0
+    new_qty = min(product.stock, current_qty + max(1, item.quantity))
+    cart[key] = {'quantity': new_qty, 'color': color, 'size': size}
+    req.session['cart'] = cart
+    req.session.modified = True
+    if req.user.is_authenticated:
+        _sync_own_db_cart(req.user, product, new_qty, color, size)
+    messages.success(req, f'✓ {product.name} added to your cart.')
+    return redirect('store:cart')
+
+
+@require_POST
+def start_linked_cart_purchase(req, item_id, action):
+    """Buy an item from a linked partner's shared cart — for them (a gift) or
+    for yourself. Same flow as the share-link page, without a token."""
+    purchase_action = 'gift' if action == 'gift' else 'self'
+    if purchase_action == 'self' and not req.user.is_authenticated:
+        messages.info(req, "🔐 Please log in to buy this for yourself.")
+        return redirect('store:login')
+
+    item = _visible_shared_item(req, item_id)
+    if not item:
+        messages.error(req, 'That item is no longer available.')
+        return redirect(f"{reverse('store:cart')}?tab=shared")
+
+    return _stage_shared_purchase(
+        req, item.cart.user, [item], purchase_action, is_all=False,
+        fallback_url=f"{reverse('store:cart')}?tab=shared",
+    )
+
 
 @login_required
 @require_POST
@@ -1051,6 +1180,17 @@ def cart(req):
     if clean_cart != raw_cart:
         req.session['cart'] = clean_cart; req.session.modified = True
 
+    # The session cart drives this page, but the shared/private flag lives on
+    # the DB CartItem — map one onto the other by variant key.
+    shared_flags = {}
+    try:
+        for ci in req.user.cart.items.select_related('product'):
+            shared_flags[_cart_key(ci.product_id, ci.color, ci.size)] = ci.is_shared
+    except Cart.DoesNotExist:
+        pass
+    for entry in cart_items:
+        entry['is_shared'] = shared_flags.get(entry['key'], False)
+
     link = req.user.shared_cart_links.filter(is_active=True).first()
     share_url = (req.build_absolute_uri(reverse('store:shared_cart', args=[link.token]))
                  if link else None)
@@ -1078,7 +1218,7 @@ def cart(req):
             other_cart = other.cart
         except Cart.DoesNotExist:
             continue
-        for ci in other_cart.items.select_related('product').filter(product__is_active=True):
+        for ci in other_cart.items.select_related('product').filter(product__is_active=True, is_shared=True):
             subtotal = ci.product.price * Decimal(str(ci.quantity))
             shared_items.append({'item': ci, 'owner': other, 'relation': invite.get_relation_display(), 'subtotal': subtotal})
             shared_total += subtotal

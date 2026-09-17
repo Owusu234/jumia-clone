@@ -397,6 +397,10 @@ class CartItem(models.Model):
     # shared cart, never who bought it (purchases stay private).
     added_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="added_cart_items")
     added_at = models.DateTimeField(auto_now_add=True)
+    # Opt-in visibility: a cart item is private by default and only appears in
+    # the owner's shared cart (link view and linked-account view) once the
+    # owner explicitly marks it as shared.
+    is_shared = models.BooleanField(default=False)
     
     class Meta:
         unique_together = ['cart', 'product', 'color', 'size']
