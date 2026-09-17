@@ -1072,10 +1072,12 @@ class Invoice(models.Model):
     PENDING = 'pending'
     PAID = 'paid'
     CANCELLED = 'cancelled'
+    DECLINED = 'declined'
     STATUS_CHOICES = [
         (PENDING, 'Awaiting payment'),
         (PAID, 'Paid'),
-        (CANCELLED, 'Cancelled'),
+        (CANCELLED, 'Cancelled by seller'),
+        (DECLINED, 'Declined by buyer'),
     ]
 
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="invoices")

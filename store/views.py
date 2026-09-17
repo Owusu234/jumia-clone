@@ -1356,12 +1356,35 @@ def checkout(req):
             'unit_price': invoice.unit_price,
             'subtotal': invoice.items_total,
         }]
+
+        # A Community Highlights voucher can be redeemed against the complete
+        # invoice total, including the negotiated delivery fee.
+        display_total = invoice.total
+        voucher_discount = Decimal('0.00')
+        voucher_code = req.session.get('applied_voucher')
+        if voucher_code and req.user.is_authenticated:
+            voucher = DiscountVoucher.objects.filter(
+                code=voucher_code, buyer=req.user, is_used=False
+            ).first()
+            if voucher and voucher.is_redeemable and (
+                not voucher.seller_id or voucher.seller_id == invoice.seller_id
+            ):
+                voucher_discount = voucher.discount_for(invoice.total)
+                display_total = max(Decimal('1.00'), invoice.total - voucher_discount)
+            else:
+                req.session.pop('applied_voucher', None)
+                req.session.modified = True
+
         return render(req, "store/checkout.html", {
             "items": items,
             "subtotal": invoice.items_total,
             "delivery_fee": invoice.delivery_fee,
-            "total": invoice.total,
-            "total_kobo": int(invoice.total * 100),
+            "invoice_total": invoice.total,
+            "total": display_total,
+            "voucher_discount": voucher_discount,
+            "voucher_code": voucher_code if voucher_discount else "",
+            "voucher_base_total": invoice.total,
+            "total_kobo": int(display_total * 100),
             "paystack_public_key": settings.PAYSTACK_PUBLIC_KEY,
             "cart_count": 1,
             "cart_json": json.dumps({}),
@@ -1462,6 +1485,7 @@ def checkout(req):
         "items": items,
         "total": total,
         "subtotal": total,
+        "voucher_base_total": total,
         "delivery_fee": Decimal('0.00'),
         "invoice": None,
         "total_kobo": total_kobo,
@@ -3919,6 +3943,15 @@ def validate_voucher(req):
     if voucher.is_expired:
         return JsonResponse({"ok": False, "error": "This voucher has expired."}, status=400)
 
+    # For a negotiated invoice, a Community Highlights voucher can only be
+    # redeemed against an invoice issued by the voucher's seller.
+    invoice = _active_invoice(req)
+    if invoice and voucher.seller_id and voucher.seller_id != invoice.seller_id:
+        return JsonResponse({
+            "ok": False,
+            "error": "This voucher can only be used for purchases from its seller."
+        }, status=400)
+
     discount = voucher.discount_for(subtotal)
     req.session["applied_voucher"] = voucher.code
     req.session.modified = True
@@ -4205,6 +4238,37 @@ def cancel_invoice(req, invoice_id):
 
 
 @login_required
+@require_POST
+def decline_invoice(req, invoice_id):
+    """Allow the buyer to reject an open invoice without paying it."""
+    invoice = get_object_or_404(
+        Invoice.objects.select_related('conversation', 'seller', 'buyer'),
+        id=invoice_id
+    )
+    if invoice.buyer_id != req.user.id:
+        return JsonResponse({'success': False, 'error': 'Only the buyer can decline this invoice.'}, status=403)
+    if invoice.status != Invoice.PENDING:
+        return JsonResponse({'success': False, 'error': 'That invoice is no longer open.'}, status=400)
+
+    invoice.status = Invoice.DECLINED
+    invoice.save(update_fields=['status'])
+
+    ChatMessage.objects.create(
+        conversation=invoice.conversation,
+        sender=req.user,
+        kind=ChatMessage.SYSTEM,
+        body=f'Invoice #{invoice.id} was declined by the buyer.'
+    )
+    _notify(
+        invoice.seller.user_id,
+        '🧾 Invoice declined',
+        f'{req.user.username} declined invoice #{invoice.id} for {invoice.product.name}.',
+        reverse('store:chat_thread', args=[invoice.conversation_id])
+    )
+    return JsonResponse({'success': True})
+
+
+@login_required
 def pay_invoice(req, invoice_id):
     """Buyer accepts the invoice: it becomes the checkout, priced at the
     agreed amount plus the delivery fee."""
@@ -4230,6 +4294,9 @@ def pay_invoice(req, invoice_id):
         }
     }
     req.session['invoice_checkout'] = invoice.id
+    # Do not carry a voucher from a previous cart checkout into an invoice.
+    # The buyer can explicitly apply a voucher to this invoice total.
+    req.session.pop('applied_voucher', None)
     req.session.pop('shared_purchase', None)
     req.session.modified = True
     return redirect('store:checkout')

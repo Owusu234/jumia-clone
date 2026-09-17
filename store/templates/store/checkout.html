@@ -157,16 +157,17 @@
                 </div>
 
                 <!-- Community Highlights voucher -->
-                {% if user.is_authenticated and not invoice %}
-                <div class="d-flex justify-content-between mb-2" id="voucherRow" style="display:none !important;">
+                {% if user.is_authenticated %}
+                <div class="d-flex justify-content-between mb-2" id="voucherRow" style="{% if voucher_discount %}display:flex !important;{% else %}display:none !important;{% endif %}">
                     <span class="text-muted">
-                        Voucher <code class="small" id="voucherCodeLabel"></code>
+                        Voucher <code class="small" id="voucherCodeLabel">{{ voucher_code|default:"" }}</code>
                     </span>
-                    <span class="text-success">− GH₵<span id="voucherAmount">0.00</span></span>
+                    <span class="text-success">− GH₵<span id="voucherAmount">{{ voucher_discount|default:"0.00"|floatformat:2 }}</span></span>
                 </div>
                 <div class="mb-2">
                     <div class="input-group input-group-sm">
                         <input type="text" id="voucherInput" class="form-control"
+                               value="{{ voucher_code|default:'' }}"
                                placeholder="Voucher code (e.g. SV-POP-GOLD-8492)"
                                style="text-transform: uppercase;">
                         <button class="btn btn-outline-primary" type="button" id="voucherApplyBtn">Apply</button>
@@ -439,7 +440,7 @@
     const codeLabel = document.getElementById('voucherCodeLabel');
     const amountEl  = document.getElementById('voucherAmount');
     const totalEl   = document.getElementById('grandTotal');
-    const SUBTOTAL  = "{{ total }}";
+    const SUBTOTAL  = "{{ voucher_base_total|default:total }}";
     const CSRF      = "{{ csrf_token }}";
 
     applyBtn.addEventListener('click', async function () {

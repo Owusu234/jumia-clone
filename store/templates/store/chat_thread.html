@@ -88,7 +88,11 @@
           {{ latest_invoice.quantity }} × GH₵{{ latest_invoice.unit_price }} + GH₵{{ latest_invoice.delivery_fee }} delivery
         </small>
       </div>
-      <a href="{% url 'store:pay_invoice' latest_invoice.id %}" class="btn btn-primary btn-sm">Accept &amp; pay</a>
+      <div class="d-flex gap-2">
+        <a href="{% url 'store:pay_invoice' latest_invoice.id %}" class="btn btn-primary btn-sm">Accept &amp; pay</a>
+        <button type="button" class="btn btn-outline-danger btn-sm"
+                onclick="declineInvoice({{ latest_invoice.id }})">Decline</button>
+      </div>
     </div>
     {% endif %}
   {% endif %}
@@ -104,7 +108,11 @@
           <div class="fw-bold small">Total: GH₵{{ msg.invoice.total }}</div>
           {% if msg.invoice.note %}<div class="small text-muted">{{ msg.invoice.note }}</div>{% endif %}
           {% if not is_seller_side and msg.invoice.is_payable %}
-            <a href="{% url 'store:pay_invoice' msg.invoice.id %}" class="btn btn-primary btn-sm mt-2">Accept &amp; pay GH₵{{ msg.invoice.total }}</a>
+            <div class="d-flex gap-2 mt-2 flex-wrap">
+              <a href="{% url 'store:pay_invoice' msg.invoice.id %}" class="btn btn-primary btn-sm">Accept &amp; pay GH₵{{ msg.invoice.total }}</a>
+              <button type="button" class="btn btn-outline-danger btn-sm"
+                      onclick="declineInvoice({{ msg.invoice.id }})">Decline</button>
+            </div>
           {% else %}
             <div class="small text-muted mt-1">Status: {{ msg.invoice.get_status_display }}</div>
           {% endif %}
@@ -213,6 +221,20 @@
       err.classList.remove('d-none');
     });
     return false;
+  };
+
+  window.declineInvoice = function (invoiceId) {
+    if (!confirm('Decline this invoice? The seller can send a new invoice later.')) return;
+
+    post(`/chat/invoice/${invoiceId}/decline/`, {}).then(data => {
+      if (data.success) {
+        location.reload();
+        return;
+      }
+      alert(data.error || 'Could not decline the invoice.');
+    }).catch(() => {
+      alert('Could not reach the server. Please try again.');
+    });
   };
 
   // Light polling so a reply shows up without a manual refresh.

@@ -45,6 +45,7 @@ urlpatterns = [
     path('chat/<int:conversation_id>/location/', views.chat_share_location, name='chat_share_location'),
     path('chat/<int:conversation_id>/invoice/', views.issue_invoice, name='issue_invoice'),
     path('invoice/<int:invoice_id>/cancel/', views.cancel_invoice, name='cancel_invoice'),
+    path('chat/invoice/<int:invoice_id>/decline/', views.decline_invoice, name='decline_invoice'),
     path('invoice/<int:invoice_id>/pay/', views.pay_invoice, name='pay_invoice'),
 
     path('admin/seller/<int:seller_id>/approve/', views.approve_seller, name='approve_seller'),

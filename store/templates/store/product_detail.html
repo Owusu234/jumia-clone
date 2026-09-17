@@ -202,9 +202,9 @@
                 <div class="mt-4">
                     {% if can_chat %}
                         {% if user.is_authenticated %}
-                        <button type="button" class="btn btn-primary btn-lg w-100 d-flex align-items-center justify-content-center gap-2"
+                        <button type="button" class="btn btn-primary btn-sm w-100 d-flex align-items-center justify-content-center gap-2"
                                 onclick="openSellerChat()">
-                            <i class="bi bi-chat-dots fs-4"></i>
+                            <i class="bi bi-chat-dots fs-5"></i>
                             <div class="text-start">
                                 <div class="fw-bold">Chat with {{ seller_name|default:"the seller" }}</div>
                                 <small class="opacity-75">Negotiate the price &amp; get your delivery fee</small>
@@ -216,18 +216,14 @@
                         </small>
                         {% else %}
                         <a href="{% url 'store:login' %}?next={{ request.path|urlencode }}"
-                           class="btn btn-primary btn-lg w-100 d-flex align-items-center justify-content-center gap-2">
-                            <i class="bi bi-chat-dots fs-4"></i>
+                           class="btn btn-primary btn-sm w-100 d-flex align-items-center justify-content-center gap-2">
+                            <i class="bi bi-chat-dots fs-5"></i>
                             <div class="text-start">
                                 <div class="fw-bold">Log in to chat with the seller</div>
                                 <small class="opacity-75">Agree a price before you pay</small>
                             </div>
                         </a>
                         {% endif %}
-                        <p class="small text-muted mt-2 mb-0">
-                            The listed price is a starting point. Agree a price with the seller
-                            and they will send you an invoice with the delivery fee included.
-                        </p>
                     {% else %}
                         <button class="btn btn-secondary btn-lg w-100" disabled>
                             <i class="bi bi-chat-dots me-2"></i>Chat unavailable for this product
