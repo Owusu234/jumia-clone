@@ -3,212 +3,91 @@
 
 {% block content %}
 <style>
-    /* Seller CTA Banner */
     .seller-cta-banner {
         background: var(--card);
         border: 1px solid var(--border);
         border-left: 4px solid var(--primary);
-        border-radius: var(--radius);
+        border-radius: 18px;
         padding: 18px 22px;
         margin-bottom: 18px;
-        transition: background 0.3s var(--ease), border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
-    }
-    .seller-cta-banner:hover {
-        background: var(--surface-hover);
         box-shadow: var(--shadow-sm);
+        transition: box-shadow .3s var(--ease), transform .3s var(--ease);
     }
+    .seller-cta-banner:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
 
-    /* Welcome hero — always brand orange gradient, in every theme */
-    .welcome-tile,
-    .hero-banner,
-    [data-welcome="true"] {
-        background: linear-gradient(135deg, #f68b1e 0%, #e67e1a 100%) !important;
-        color: #ffffff !important;
-        border: none !important;
-        box-shadow: var(--shadow-brand) !important;
-        border-radius: var(--radius-lg);
+    .welcome-tile {
+        border-radius: 24px;
         padding: 40px 36px !important;
         min-height: 170px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 20px;
-        margin-bottom: 26px;
-        position: relative;
-        overflow: hidden;
+        display: flex; align-items: center;
+        margin-bottom: 22px;
     }
-    .welcome-tile::after {
-        content: "";
-        position: absolute;
-        top: -40%; right: -10%;
-        width: 260px; height: 260px;
-        background: rgba(255,255,255,0.12);
-        border-radius: 50%;
-        pointer-events: none;
-    }
-    .welcome-tile h1, .welcome-tile h2, .welcome-tile h3,
-    .welcome-tile p, .welcome-tile a,
-    .hero-banner h1, .hero-banner h2, .hero-banner p {
-        color: #ffffff !important;
-        position: relative;
-        z-index: 1;
-    }
-    .welcome-tile h2 { font-family: var(--font-display); font-weight: 800; }
-    .welcome-profile {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        position: relative;
-        z-index: 1;
-    }
-    .welcome-profile-avatar {
-        width: 58px;
-        height: 58px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 3px solid rgba(255,255,255,.85);
-        background: #fff;
-        flex-shrink: 0;
-    }
-    .welcome-profile-meta {
-        min-width: 0;
-    }
-    .welcome-profile-meta .profile-name {
-        font-weight: 800;
-        font-size: 1rem;
-        color: #fff !important;
-    }
-    .welcome-profile-meta .profile-bio {
-        font-size: .82rem;
-        color: rgba(255,255,255,.88) !important;
-        margin: 2px 0 0;
-    }
-    .welcome-tile a {
-        text-decoration: underline;
-        font-weight: 700;
-    }
+    .welcome-tile h2 { font-family: var(--font-display); font-weight: 800; letter-spacing: -.02em; }
 
-    /* Search & filter bar */
-    .hero-search {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 18px;
-        margin-bottom: 20px;
-        box-shadow: var(--shadow-sm);
-    }
+    .hero-search { border-radius: 18px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
     .filter-bar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: center;
-        padding: 14px 18px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        margin-bottom: 20px;
+        display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+        padding: 12px 16px; margin-bottom: 20px;
     }
-    .filter-label {
-        font-weight: 700;
-        color: var(--text);
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        white-space: nowrap;
-    }
+    .filter-label { font-weight: 700; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
     .filter-group { display: flex; align-items: center; gap: 8px; }
     .price-inputs { display: flex; align-items: center; gap: 4px; }
     .price-inputs input { width: 80px; text-align: center; }
     .price-inputs span { color: var(--text-muted); font-weight: 500; }
 
-    /* Product cards */
     .product-card {
         border: 1px solid var(--border);
-        border-radius: var(--radius);
         overflow: hidden;
-        transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease), border-color 0.25s var(--ease);
+        transition: transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s var(--ease);
         background: var(--surface);
-        height: 100%;
-        display: flex;
-        flex-direction: column;
+        height: 100%; display: flex; flex-direction: column;
     }
-    .product-card:hover {
-        transform: translateY(-6px);
-        box-shadow: var(--shadow);
-        border-color: rgba(246, 139, 30, 0.35);
-    }
-    .product-img {
-        height: 190px;
-        object-fit: contain;
-        width: 100%;
-        background: #ffffff;
-        padding: 12px;
-        transition: transform 0.35s var(--ease);
-    }
+    .product-card:hover { transform: translateY(-6px); border-color: rgba(246,139,30,.4); }
+    .product-img { height: 190px; object-fit: contain; width: 100%; background: #fff; padding: 12px; transition: transform .35s var(--ease); }
     .product-card:hover .product-img { transform: scale(1.05); }
     .product-body { padding: 14px; flex-grow: 1; display: flex; flex-direction: column; }
     .product-title {
-        font-weight: 600;
-        margin-bottom: 6px;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        font-size: 0.9rem;
-        line-height: 1.3;
-        color: var(--text);
+        font-weight: 600; margin-bottom: 6px;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden; font-size: .9rem; line-height: 1.3;
     }
-    .product-price { font-weight: 800; color: var(--primary); font-size: 1.05rem; margin: 6px 0; }
-    .stock-badge { font-size: 0.7rem; padding: 3px 10px; border-radius: var(--radius-pill); font-weight: 600; }
-    .stock-ok { background: var(--success-bg); color: var(--success); }
-    .stock-low { background: var(--warning-bg); color: var(--warning); }
-    .stock-out { background: var(--danger-bg); color: var(--danger); }
+    .stock-badge { font-size: .7rem; padding: 3px 10px; font-weight: 600; }
+    .product-specs { line-height: 1.45; }
+    .product-specs > div { margin-bottom: 2px; }
 
-    /* Mobile responsiveness */
     @media (max-width: 767px) {
-        .welcome-tile {
-            flex-direction: column;
-            text-align: center;
-            padding: 26px 22px !important;
-        }
-        .welcome-tile p { max-width: 100%; }
-
+        .welcome-tile { flex-direction: column; text-align: center; padding: 26px 22px !important; }
         .filter-bar { flex-direction: column; align-items: stretch; }
         .filter-group, .price-inputs { width: 100%; justify-content: space-between; }
         .price-inputs input { flex: 1; }
-
         .hero-search .row { flex-direction: column; }
-        .hero-search .col-md-8, .hero-search .col-md-3, .hero-search .col-md-1 { width: 100%; }
-
+        .hero-search .col-md-8, .hero-search .col-md-4 { width: 100%; }
         .product-grid .col-6 { padding: 4px !important; }
         .product-img { height: 140px; }
-        .product-title { font-size: 0.85rem; }
+        .product-title { font-size: .85rem; }
     }
-
-    .product-specs { line-height: 1.45; }
-    .product-specs > div { margin-bottom: 2px; }
 </style>
 
 <div class="container-fluid px-3 px-md-4 pt-4">
-    
-    <!-- Welcome message -->
+
+    <!-- Welcome hero -->
     {% if user.is_authenticated %}
     <div class="welcome-tile">
         <div>
-            <h2>Welcome back, {{ user.first_name|default:user.username }}.</h2>
-            <p>Explore quality products, discover new sellers, and find something you will love.</p>
+            <h2>Welcome back, {{ user.first_name|default:user.username }} 👋</h2>
+            <p>Fresh finds from your favourite sellers are waiting below.</p>
         </div>
     </div>
     {% else %}
     <div class="welcome-tile">
         <div>
-            <h2>Welcome to ShopVibe</h2>
-            <p>Explore quality products from trusted sellers. <a href="{% url 'store:login' %}">Sign in</a> for a more personalised experience.</p>
+            <h2>Shop trusted sellers. Pay securely.</h2>
+            <p>Discover quality products on ShopVibe. <a href="{% url 'store:login' %}">Sign in</a> for a personalised experience.</p>
         </div>
     </div>
     {% endif %}
 
-    <!-- Seller CTA Banner -->
+    <!-- Seller CTA -->
     {% if not user.is_authenticated or not user.seller_profile %}
     <div class="seller-cta-banner">
         <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
@@ -225,30 +104,32 @@
     </div>
     {% endif %}
 
-    <!-- Community Highlights teaser -->
+    <!-- Highlights teaser -->
     <div class="seller-cta-banner" style="border-left-color: var(--success);">
         <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
             <div>
                 <h5 class="fw-bold mb-1">Community Highlights</h5>
-                <p class="mb-0 small text-muted">
-                    Real unboxings from delivered orders. Like <strong>+1</strong>,
-                    comment <strong>+2</strong>, share <strong>+3</strong> — hit the
-                    seller's goal and the buyer unlocks a discount voucher.
-                </p>
+                <p class="mb-0 small text-muted">Real unboxings from delivered orders. Like <strong>+1</strong>, comment <strong>+2</strong>, share <strong>+3</strong> — hit the seller's goal and unlock a discount voucher.</p>
             </div>
-            <a href="{% url 'store:community_highlights' %}" class="btn btn-success fw-bold px-4 py-2 text-nowrap">
-                Explore Highlights
-            </a>
+            <a href="{% url 'store:community_highlights' %}" class="btn btn-success fw-bold px-4 py-2 text-nowrap">Explore Highlights</a>
         </div>
     </div>
 
-    <!-- 🔍 Search Bar -->
+    <!-- Quick category chips -->
+    <div class="cat-chips mb-3">
+        <a href="{% url 'store:home' %}" class="{% if not request.GET.category %}active{% endif %}">All</a>
+        {% for cat in categories %}
+        <a href="{% url 'store:home' %}?category={{ cat.slug }}" class="{% if request.GET.category == cat.slug %}active{% endif %}">{{ cat.icon|default:"📦" }} {{ cat.name }}</a>
+        {% endfor %}
+    </div>
+
+    <!-- Search -->
     <div class="hero-search">
         <form method="get" class="row g-2 align-items-center">
             <div class="col-md-8">
                 <div class="input-group">
                     <span class="input-group-text bg-surface border-end-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" name="q" class="form-control border-start-0" 
+                    <input type="text" name="q" class="form-control border-start-0"
                            placeholder="Search products..." value="{{ request.GET.q }}">
                 </div>
             </div>
@@ -256,34 +137,25 @@
                 <select name="category" class="form-select" onchange="this.form.submit()">
                     <option value="">All Categories</option>
                     {% for cat in categories %}
-                    <option value="{{ cat.slug }}" {% if request.GET.category == cat.slug %}selected{% endif %}>
-                        {{ cat.icon|default:"📦" }} {{ cat.name }}
-                    </option>
+                    <option value="{{ cat.slug }}" {% if request.GET.category == cat.slug %}selected{% endif %}>{{ cat.icon|default:"📦" }} {{ cat.name }}</option>
                     {% endfor %}
                 </select>
             </div>
         </form>
     </div>
 
-    <!-- 🎛️ Filter & Sort Bar (NEW) -->
+    <!-- Filter & sort -->
     <form method="get" class="filter-bar">
-        <!-- Preserve existing search params -->
         {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
         {% if request.GET.category %}<input type="hidden" name="category" value="{{ request.GET.category }}">{% endif %}
-        
-        <!-- Price Filter -->
         <div class="filter-group">
             <span class="filter-label"><i class="bi bi-cash-coin"></i> Price:</span>
             <div class="price-inputs">
-                <input type="number" name="price_min" class="form-control form-control-sm" 
-                       placeholder="Min" value="{{ request.GET.price_min }}" min="0">
+                <input type="number" name="price_min" class="form-control form-control-sm" placeholder="Min" value="{{ request.GET.price_min }}" min="0">
                 <span>–</span>
-                <input type="number" name="price_max" class="form-control form-control-sm" 
-                       placeholder="Max" value="{{ request.GET.price_max }}" min="0">
+                <input type="number" name="price_max" class="form-control form-control-sm" placeholder="Max" value="{{ request.GET.price_max }}" min="0">
             </div>
         </div>
-        
-        <!-- Sort Dropdown -->
         <div class="filter-group ms-auto">
             <span class="filter-label"><i class="bi bi-arrow-down-up"></i> Sort:</span>
             <select name="sort" class="form-select form-select-sm" style="min-width: 180px;" onchange="this.form.submit()">
@@ -294,19 +166,12 @@
                 <option value="name_asc" {% if request.GET.sort == 'name_asc' %}selected{% endif %}>🔤 Name: A to Z</option>
             </select>
         </div>
-        
-        <!-- Clear Filters Button -->
         {% if request.GET.price_min or request.GET.price_max or request.GET.sort %}
-        <a href="{{ request.path }}" class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-x-lg"></i> Clear
-        </a>
+        <a href="{{ request.path }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-lg"></i> Clear</a>
         {% endif %}
-        
-        <!-- Apply Button (Mobile) -->
         <button type="submit" class="btn btn-sm btn-primary d-md-none">Apply</button>
     </form>
 
-    <!-- Active Filters Display -->
     {% if request.GET.price_min or request.GET.price_max or request.GET.sort %}
     <div class="d-flex flex-wrap gap-2 mb-3">
         {% if request.GET.price_min or request.GET.price_max %}
@@ -324,24 +189,23 @@
     </div>
     {% endif %}
 
-        {% if followed_updates %}
-    <div class="mb-4">
+    <!-- Followed sellers -->
+    {% if followed_updates %}
+    <div class="follow-strip mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0">New from sellers you follow</h6>
-            <small class="text-muted">Latest uploads</small>
+            <h6 class="fw-bold mb-0">⭐ New from sellers you follow</h6>
+            <small class="text-muted">latest uploads</small>
         </div>
         <div class="d-flex gap-3 overflow-auto pb-2" style="scroll-snap-type: x mandatory;">
             {% for p in followed_updates %}
-            <div class="flex-shrink-0" style="width: 160px; scroll-snap-align: start;">
+            <div class="fs-item flex-shrink-0" style="width: 160px; scroll-snap-align: start;">
                 <a href="{% url 'store:product_detail' p.slug %}" class="text-decoration-none">
                     <img src="{{ p.get_image }}" alt="{{ p.name }}" loading="lazy"
                          onerror="this.src='https://via.placeholder.com/400?text=No+Image'"
-                         style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;">
+                         style="width:100%;aspect-ratio:1;object-fit:cover;">
                     <div class="pt-1" style="font-size:.88rem;">{{ p.name|truncatechars:24 }}</div>
                     <div class="fw-bold product-price" style="font-size:.9rem;">GH₵{{ p.price }}</div>
-                    <small class="text-muted" style="font-size:.75rem;">
-                        <i class="bi bi-shop me-1"></i>{{ p.seller.store_name|truncatechars:12 }}
-                    </small>
+                    <small class="text-muted" style="font-size:.75rem;"><i class="bi bi-shop me-1"></i>{{ p.seller.store_name|truncatechars:12 }}</small>
                 </a>
             </div>
             {% endfor %}
@@ -349,31 +213,26 @@
     </div>
     {% endif %}
 
-<!-- 🛍️ Products Grid -->
+    <!-- Products grid -->
     {% if products %}
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="fw-bold mb-0">All Products</h6>
+        <h6 class="fw-bold mb-0">🛍️ All Products</h6>
         <small class="text-muted">{{ products.paginator.count }} items</small>
     </div>
-    
+
     <div class="row g-3 product-grid">
         {% for p in products %}
         <div class="col-6 col-md-4 col-lg-3">
             <div class="product-card">
                 <div class="position-relative">
                     <a href="{% url 'store:product_detail' p.slug %}" class="d-block">
-                        <img src="{{ p.get_image }}" class="product-img" alt="{{ p.name }}" loading="lazy" 
+                        <img src="{{ p.get_image }}" class="product-img" alt="{{ p.name }}" loading="lazy"
                              onerror="this.src='https://via.placeholder.com/400?text=No+Image'">
                     </a>
-                    <button type="button"
-                        class="wish-btn"
-                        data-product-id="{{ p.id }}"
-                        data-product-name="{{ p.name }}"
-                        data-product-price="{{ p.price }}"
-                        data-product-image="{{ p.get_image }}"
-                        data-product-url="{% url 'store:product_detail' p.slug %}"
-                        onclick="svToggleWishlist({{ p.id }}, this)"
-                        aria-label="Save {{ p.name }} to wishlist">
+                    <button type="button" class="wish-btn"
+                        data-product-id="{{ p.id }}" data-product-name="{{ p.name }}" data-product-price="{{ p.price }}"
+                        data-product-image="{{ p.get_image }}" data-product-url="{% url 'store:product_detail' p.slug %}"
+                        onclick="svToggleWishlist({{ p.id }}, this)" aria-label="Save {{ p.name }} to wishlist">
                         <i class="bi bi-heart"></i>
                     </button>
                 </div>
@@ -383,13 +242,9 @@
                     </a>
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="product-price">GH₵{{ p.price }}</span>
-                        {% if p.stock > 10 %}
-                            <span class="stock-badge stock-ok d-none d-md-inline-block">In Stock</span>
-                        {% elif p.stock > 0 %}
-                            <span class="stock-badge stock-low d-none d-md-inline-block">Low</span>
-                        {% else %}
-                            <span class="stock-badge stock-out d-none d-md-inline-block">Out</span>
-                        {% endif %}
+                        {% if p.stock > 10 %}<span class="stock-badge stock-ok d-none d-md-inline-block">In Stock</span>
+                        {% elif p.stock > 0 %}<span class="stock-badge stock-low d-none d-md-inline-block">Low</span>
+                        {% else %}<span class="stock-badge stock-out d-none d-md-inline-block">Out</span>{% endif %}
                     </div>
                     {% if p.seller %}
                     <small class="text-muted d-block mb-2">
@@ -398,8 +253,6 @@
                         </a>
                     </small>
                     {% endif %}
-
-                    <!-- Buyer-visible product specifications -->
                     {% if p.get_colors or p.size_list or p.dimensions_display or p.warranty %}
                     <div class="product-specs small text-muted mb-2">
                         {% if p.get_colors %}<div><i class="bi bi-palette me-1"></i><strong>Colors:</strong> {{ p.colors }}</div>{% endif %}
@@ -408,18 +261,11 @@
                         {% if p.warranty %}<div><i class="bi bi-shield-check me-1"></i><strong>Warranty:</strong> {{ p.warranty }}</div>{% endif %}
                     </div>
                     {% endif %}
-
-                    <!-- Stock status, mobile only — shown just above the Add to cart button -->
                     <div class="d-md-none mb-2">
-                        {% if p.stock > 10 %}
-                            <span class="stock-badge stock-ok">In Stock</span>
-                        {% elif p.stock > 0 %}
-                            <span class="stock-badge stock-low">Low</span>
-                        {% else %}
-                            <span class="stock-badge stock-out">Out</span>
-                        {% endif %}
+                        {% if p.stock > 10 %}<span class="stock-badge stock-ok">In Stock</span>
+                        {% elif p.stock > 0 %}<span class="stock-badge stock-low">Low</span>
+                        {% else %}<span class="stock-badge stock-out">Out</span>{% endif %}
                     </div>
-
                     <div class="mt-auto d-grid gap-2">
                         {% if p.stock > 0 %}
                         <a href="{% url 'store:product_detail' p.slug %}" class="btn btn-sm btn-outline-primary">
@@ -435,29 +281,21 @@
         {% endfor %}
     </div>
 
-    <!-- Pagination -->
     {% if products.has_other_pages %}
     <nav class="mt-4">
         <ul class="pagination justify-content-center pagination-sm">
             {% if products.has_previous %}
-            <li class="page-item">
-                <a class="page-link" href="?page={{ products.previous_page_number }}&{{ request.GET.urlencode|slice:6 }}">Prev</a>
-            </li>
+            <li class="page-item"><a class="page-link" href="?page={{ products.previous_page_number }}&{{ request.GET.urlencode|slice:6 }}">Prev</a></li>
             {% endif %}
-            <li class="page-item active">
-                <span class="page-link">{{ products.number }}/{{ products.paginator.num_pages }}</span>
-            </li>
+            <li class="page-item active"><span class="page-link">{{ products.number }}/{{ products.paginator.num_pages }}</span></li>
             {% if products.has_next %}
-            <li class="page-item">
-                <a class="page-link" href="?page={{ products.next_page_number }}&{{ request.GET.urlencode|slice:6 }}">Next</a>
-            </li>
+            <li class="page-item"><a class="page-link" href="?page={{ products.next_page_number }}&{{ request.GET.urlencode|slice:6 }}">Next</a></li>
             {% endif %}
         </ul>
     </nav>
     {% endif %}
-    
+
     {% else %}
-    <!-- Empty State -->
     <div class="text-center py-5">
         <i class="bi bi-search" style="font-size: 3rem; opacity: 0.3;"></i>
         <h5 class="mt-3">No products found</h5>
@@ -467,7 +305,6 @@
     {% endif %}
 </div>
 
-<!-- Auto-submit script for price inputs (optional UX improvement) -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const priceInputs = document.querySelectorAll('input[name="price_min"], input[name="price_max"]');
@@ -475,7 +312,7 @@ document.addEventListener('DOMContentLoaded', function() {
     priceInputs.forEach(input => {
         input.addEventListener('input', function() {
             clearTimeout(timeout);
-            timeout = setTimeout(() => this.form.submit(), 500); // Debounce 500ms
+            timeout = setTimeout(() => this.form.submit(), 500);
         });
     });
 });
