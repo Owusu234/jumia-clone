@@ -122,7 +122,7 @@
             </p>
             
             <div class="d-flex align-items-center gap-3 mb-3">
-                <span class="fs-4 fw-bold text-primary">GH₵{{ product.price }}</span>
+                <span class="fs-4 fw-bold product-price text-primary">GH₵{{ product.price }}</span>
                 {% if product.stock > 10 %}
                     <span class="badge bg-success-subtle text-success">In Stock</span>
                 {% elif product.stock > 0 %}
@@ -851,7 +851,7 @@ function tryAR() {
     flex-direction: column; gap: .6rem; }
   .chat-bubble { max-width: 85%; padding: .55rem .8rem; border-radius: 14px; font-size: .92rem; }
   .chat-bubble.theirs { align-self: flex-start; background: rgba(0,0,0,.06); }
-  .chat-bubble.mine { align-self: flex-end; background: var(--p, #0d6efd); color: #fff; }
+  .chat-bubble.mine { align-self: flex-end; background: var(--p, var(--p)); color: #fff; }
   .chat-bubble.system { align-self: center; background: transparent; color: #6c757d; font-size: .82rem; }
   .chat-bubble .chat-time { display: block; font-size: .7rem; opacity: .7; margin-top: .2rem; }
   .chat-invoice { align-self: stretch; border: 1px solid rgba(0,0,0,.15); border-radius: 12px;

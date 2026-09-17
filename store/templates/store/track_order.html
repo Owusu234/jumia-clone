@@ -33,7 +33,7 @@
         background: var(--bg); color: var(--tx);
     }
     .status-Pending { background: #fff3cd; color: #856404; }
-    .status-Processing { background: #cce5ff; color: #004085; }
+    .status-Processing { background: rgba(246, 139, 30, 0.12); color: var(--p); }
     .status-Shipped { background: #d4edda; color: #155724; }
     .status-Delivered { background: #28a745; color: white; }
 </style>
@@ -103,7 +103,7 @@
                         <tr>
                             <td>{{ item.product.name }}{% if item.color %}<small class="text-muted d-block">Color: {{ item.color }}</small>{% endif %}{% if item.size %}<small class="text-muted d-block">Size: {{ item.size }}</small>{% endif %}</td>
                             <td class="text-end">{{ item.quantity }}</td>
-                            <td class="text-end">GH₵{{ item.price|floatformat:2 }}</td>
+                            <td class="text-end product-price">GH₵{{ item.price|floatformat:2 }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

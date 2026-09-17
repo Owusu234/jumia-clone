@@ -150,7 +150,7 @@
                             <div><div class="fw-medium">{{ p.name }}</div><small class="text-muted">{{ p.category.name }}</small></div>
                         </div>
                     </td>
-                    <td class="fw-bold">GH₵{{ p.price }}</td>
+                    <td class="fw-bold product-price">GH₵{{ p.price }}</td>
                     <td>
                         {% if p.stock > 10 %}<span class="badge bg-success-subtle text-success">In Stock</span>
                         {% elif p.stock > 0 %}<span class="badge bg-warning-subtle text-warning">Low: {{ p.stock }}</span>

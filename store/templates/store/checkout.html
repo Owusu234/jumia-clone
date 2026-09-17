@@ -107,7 +107,7 @@
         <!-- Order Summary -->
         <div class="col-lg-8">
             {% if invoice %}
-            <div class="checkout-card mb-3" style="border: 1px solid var(--p, #0d6efd);">
+            <div class="checkout-card mb-3" style="border: 1px solid var(--p, var(--p));">
                 <h6 class="fw-bold mb-1"><i class="bi bi-receipt me-1"></i>Paying invoice #{{ invoice.id }}</h6>
                 <p class="small text-muted mb-0">
                     This is the price you agreed with {{ invoice.seller.store_name }} in chat, plus the delivery
@@ -131,7 +131,7 @@
                             {% if item.size %}<small class="text-muted d-block">Size: {{ item.size }}</small>{% endif %}
                         </div>
                     </div>
-                    <span class="fw-bold">GH₵{{ item.subtotal|floatformat:2 }}</span>
+                    <span class="fw-bold product-price">GH₵{{ item.subtotal|floatformat:2 }}</span>
                 </div>
                 {% empty %}
                 <p class="text-muted">Your cart is empty.</p>
@@ -181,7 +181,7 @@
                 <hr class="border-theme">
                 <div class="d-flex justify-content-between mb-3">
                     <span class="fw-bold fs-5">Total</span>
-                    <span class="fw-bold fs-5 text-primary">GH₵<span id="grandTotal">{{ total|floatformat:2 }}</span></span>
+                    <span class="fw-bold fs-5 product-price text-primary">GH₵<span id="grandTotal">{{ total|floatformat:2 }}</span></span>
                 </div>
 
                 {% if not user.is_authenticated %}

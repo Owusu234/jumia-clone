@@ -161,7 +161,7 @@
                     </div>
                 </div>
                 <div class="text-end cart-item-price">
-                    <div class="fw-bold fs-5 text-primary">GH₵{{ item.total_price|floatformat:2 }}</div>
+                    <div class="fw-bold fs-5 product-price text-primary">GH₵{{ item.total_price|floatformat:2 }}</div>
                     <button class="btn btn-sm btn-link text-danger p-0 mt-2" onclick="removeFromCart('{{ item.key|escapejs }}')">
                         <i class="bi bi-trash3 me-1"></i>Remove
                     </button>
@@ -173,7 +173,7 @@
         <hr class="border-theme my-3">
         <div class="d-flex justify-content-between mb-2">
             <span class="text-muted">Estimated Subtotal ({{ cart_count }} items)</span>
-            <span class="fw-bold">GH₵{{ cart_total|floatformat:2 }}</span>
+            <span class="fw-bold product-price">GH₵{{ cart_total|floatformat:2 }}</span>
         </div>
         <p class="small text-muted mb-3">Taxes and delivery calculated during checkout.</p>
         <a href="{% url 'store:checkout' %}" class="btn btn-primary w-100 py-2 fw-bold">
@@ -207,7 +207,7 @@
                 <h6 class="fw-bold mb-1">{{ entry.item.product.name }}</h6>
                 <small class="text-muted">Qty: {{ entry.item.quantity }} · via {{ entry.owner.username }} ({{ entry.relation }})</small>
               </div>
-              <div class="fw-bold text-primary">GH₵{{ entry.subtotal|floatformat:2 }}</div>
+              <div class="fw-bold product-price text-primary">GH₵{{ entry.subtotal|floatformat:2 }}</div>
             </div>
             <div class="d-flex gap-2 flex-wrap mt-3">
               <form method="post" action="{% url 'store:start_linked_cart_purchase' entry.item.id 'gift' %}">
@@ -224,7 +224,7 @@
           <hr class="border-theme my-3">
           <div class="d-flex justify-content-between">
             <span class="fw-bold">Shared total</span>
-            <span class="fw-bold text-primary">GH₵{{ shared_total|floatformat:2 }}</span>
+            <span class="fw-bold product-price text-primary">GH₵{{ shared_total|floatformat:2 }}</span>
           </div>
         {% else %}
           <p class="text-muted text-center py-4">Your linked partners haven't shared any items yet.</p>

@@ -35,7 +35,7 @@
           <a href="{% url 'store:product_detail' p.slug %}" class="text-decoration-none">
             <h6 class="mb-1" style="font-size:.95rem;">{{ p.name|truncatechars:30 }}</h6>
           </a>
-          <span class="fw-bold">GH₵{{ p.price }}</span>
+          <span class="fw-bold product-price">GH₵{{ p.price }}</span>
         </div>
       </div>
     </div>

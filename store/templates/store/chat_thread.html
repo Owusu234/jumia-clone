@@ -135,7 +135,7 @@
         {% else %}
         <div class="{% if msg.kind == 'system' %}text-center text-muted small{% elif msg.sender_id == user.id %}text-end{% endif %}">
           <span class="d-inline-block px-2 py-1 rounded"
-                style="{% if msg.sender_id == user.id %}background: var(--p, #0d6efd); color:#fff;{% elif msg.kind != 'system' %}background: rgba(0,0,0,.06);{% endif %} max-width: 85%;">
+                style="{% if msg.sender_id == user.id %}background: var(--p, var(--p)); color:#fff;{% elif msg.kind != 'system' %}background: rgba(0,0,0,.06);{% endif %} max-width: 85%;">
             {{ msg.body }}
             <small class="d-block" style="font-size:.7rem; opacity:.7;">{{ msg.created_at|date:"d M, H:i" }}</small>
           </span>
