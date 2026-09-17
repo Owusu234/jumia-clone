@@ -51,11 +51,16 @@
 @media (max-width: 767px) {
   #sv-chat-bubble {
     display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
   #sv-chat-panel {
     top: auto !important;
-    right: 12px !important;
+    left: 8px !important;
+    right: 8px !important;
     bottom: calc(74px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    max-width: none !important;
     max-height: calc(100dvh - 92px - env(safe-area-inset-bottom));
   }
 }

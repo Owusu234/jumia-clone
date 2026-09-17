@@ -6,6 +6,10 @@
   const ENDPOINT = "/api/chatbot/recommend/"; // matches chatbot_urls_snippet.py
 
   // ---- Build DOM ----
+  // The mobile bottom navigation contains the launcher. Desktop uses the
+  // floating bubble. Keep one shared panel/functionality for both.
+  const mobileChatBtn = document.getElementById("sv-mobile-chat-button");
+
   const bubble = document.createElement("div");
   bubble.id = "sv-chat-bubble";
   bubble.innerText = "💬";
@@ -30,6 +34,14 @@
 
   document.body.appendChild(bubble);
   document.body.appendChild(panel);
+
+  // Do not expose the floating launcher on phones. The bottom-nav Chat item
+  // is the only mobile launcher. This also protects against stale CSS caches.
+  if (window.innerWidth <= 767) {
+    bubble.style.display = "none";
+    bubble.style.visibility = "hidden";
+    bubble.style.pointerEvents = "none";
+  }
 
   const messagesEl = panel.querySelector("#sv-chat-messages");
   const inputEl = panel.querySelector("#sv-chat-input");
@@ -167,12 +179,36 @@
   window.addEventListener("pointercancel", endDrag);
 
   window.addEventListener("resize", () => {
-    const rect = bubble.getBoundingClientRect();
-    if (bubble.style.left) placeBubble(rect.left, rect.top);
-    if (panel.classList.contains("open")) positionPanelNearBubble();
+    if (window.innerWidth <= 767) {
+      bubble.style.display = "none";
+      bubble.style.visibility = "hidden";
+      bubble.style.pointerEvents = "none";
+    } else {
+      bubble.style.display = "flex";
+      bubble.style.visibility = "visible";
+      bubble.style.pointerEvents = "auto";
+      const rect = bubble.getBoundingClientRect();
+      if (bubble.style.left) placeBubble(rect.left, rect.top);
+    }
+    if (panel.classList.contains("open") && window.innerWidth > 767) positionPanelNearBubble();
   });
 
   restorePosition();
+
+  function toggleChat() {
+    panel.classList.toggle("open");
+    mobileChatBtn?.classList.toggle("active", panel.classList.contains("open"));
+    if (panel.classList.contains("open")) {
+      // On mobile the panel is positioned by CSS above the bottom nav.
+      // On desktop it remains anchored near the floating bubble.
+      if (window.innerWidth > 767) positionPanelNearBubble();
+      if (!greeted) {
+        addBotMessage("Hi! Tell me what you're shopping for and I'll suggest a few things from the store.");
+        greeted = true;
+      }
+      setTimeout(() => inputEl.focus(), 0);
+    }
+  }
 
   bubble.addEventListener("click", (e) => {
     // A drag that just ended fires a click right after pointerup — swallow it
@@ -183,14 +219,16 @@
       e.stopPropagation();
       return;
     }
-    panel.classList.toggle("open");
-    mobileChatBtn?.classList.toggle("active", panel.classList.contains("open"));
-    if (panel.classList.contains("open")) positionPanelNearBubble();
-    if (!greeted) {
-      addBotMessage("Hi! Tell me what you're shopping for and I'll suggest a few things from the store.");
-      greeted = true;
-    }
+    toggleChat();
   });
+
+  // Mobile launcher: use the Chat item in the bottom navigation instead of
+  // the floating bubble. It opens the exact same assistant panel.
+  mobileChatBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleChat();
+  });
+
   closeBtn.addEventListener("click", () => {
     panel.classList.remove("open");
     mobileChatBtn?.classList.remove("active");
