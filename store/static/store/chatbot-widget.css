@@ -46,21 +46,17 @@
 }
 #sv-chat-panel.open { display: flex; }
 
-/* Mobile: keep the assistant in the upper-right, below the navbar, so it
-   never covers the cart/bottom navigation. The panel follows the launcher. */
+/* Mobile: the assistant is launched from the bottom navigation bar instead
+   of using a floating button. The chat panel opens just above the nav. */
 @media (max-width: 767px) {
   #sv-chat-bubble {
-    top: calc(82px + env(safe-area-inset-top)) !important;
-    right: 12px !important;
-    bottom: auto !important;
-    opacity: 1;
-    pointer-events: auto;
+    display: none !important;
   }
   #sv-chat-panel {
-    top: calc(154px + env(safe-area-inset-top)) !important;
+    top: auto !important;
     right: 12px !important;
-    bottom: auto !important;
-    max-height: calc(100dvh - 166px - env(safe-area-inset-top));
+    bottom: calc(74px + env(safe-area-inset-bottom)) !important;
+    max-height: calc(100dvh - 92px - env(safe-area-inset-bottom));
   }
 }
 

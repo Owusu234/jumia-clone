@@ -665,3 +665,18 @@ footer .footer-brand { color: var(--p); font-weight: 800; font-size: 1.2rem; }
    against dark surfaces. Invert it whenever dark mode is active. */
 [data-theme="dark"] .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
 .form-text { color: var(--muted); font-size: 0.8rem; }
+
+/* ════════════════════════════════════════════════════════════════
+   PRODUCT NAME CONSISTENCY — always black across the storefront
+   ════════════════════════════════════════════════════════════════ */
+.product-title,
+.related-title,
+.product-card h6,
+.product-card .pt-1,
+.product-card .fw-semibold,
+.cart-item-row h6,
+.checkout-item h6,
+.chat-thread-wrap a.text-decoration-none,
+.card-body > .fw-semibold.small.mb-1 {
+  color: #000 !important;
+}

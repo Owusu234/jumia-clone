@@ -184,13 +184,17 @@
       return;
     }
     panel.classList.toggle("open");
+    mobileChatBtn?.classList.toggle("active", panel.classList.contains("open"));
     if (panel.classList.contains("open")) positionPanelNearBubble();
     if (!greeted) {
       addBotMessage("Hi! Tell me what you're shopping for and I'll suggest a few things from the store.");
       greeted = true;
     }
   });
-  closeBtn.addEventListener("click", () => panel.classList.remove("open"));
+  closeBtn.addEventListener("click", () => {
+    panel.classList.remove("open");
+    mobileChatBtn?.classList.remove("active");
+  });
 
   function addUserMessage(text) {
     const el = document.createElement("div");

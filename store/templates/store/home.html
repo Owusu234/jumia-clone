@@ -54,6 +54,35 @@
         z-index: 1;
     }
     .welcome-tile h2 { font-family: var(--font-display); font-weight: 800; }
+    .welcome-profile {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        position: relative;
+        z-index: 1;
+    }
+    .welcome-profile-avatar {
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid rgba(255,255,255,.85);
+        background: #fff;
+        flex-shrink: 0;
+    }
+    .welcome-profile-meta {
+        min-width: 0;
+    }
+    .welcome-profile-meta .profile-name {
+        font-weight: 800;
+        font-size: 1rem;
+        color: #fff !important;
+    }
+    .welcome-profile-meta .profile-bio {
+        font-size: .82rem;
+        color: rgba(255,255,255,.88) !important;
+        margin: 2px 0 0;
+    }
     .welcome-tile a {
         text-decoration: underline;
         font-weight: 700;
@@ -165,9 +194,18 @@
     <!-- ✅ Welcome Tile (Always Orange) -->
     {% if user.is_authenticated %}
     <div class="welcome-tile">
-        <div>
-            <h2>Welcome back, {{ user.first_name|default:user.username }}! 👋</h2>
-            <p>Discover amazing deals on {{ products.paginator.count|default:0 }}+ products.</p>
+        <div class="welcome-profile">
+            {% if user.user_profile %}
+                <img src="{{ user.user_profile.get_avatar_url }}" alt="{{ user.username }}" class="welcome-profile-avatar" loading="lazy">
+            {% endif %}
+            <div class="welcome-profile-meta">
+                <div class="profile-name">{{ user.first_name|default:user.username }} 👋</div>
+                {% if user.user_profile.bio %}
+                    <p class="profile-bio">{{ user.user_profile.bio|truncatechars:90 }}</p>
+                {% else %}
+                    <p class="profile-bio">Welcome back. Discover amazing deals on {{ products.paginator.count|default:0 }}+ products.</p>
+                {% endif %}
+            </div>
         </div>
     </div>
     {% else %}
