@@ -31,6 +31,7 @@ urlpatterns = [
     path('cart/shared/<uuid:token>/purchase/<str:action>/', views.start_shared_cart_purchase, name='start_shared_cart_purchase'),
     path('cart/item/share-toggle/', views.toggle_cart_item_shared, name='toggle_cart_item_shared'),
     path('cart/item/share-recipients/', views.update_cart_item_recipients, name='update_cart_item_recipients'),
+    path('cart/shared/item/<int:item_id>/delete/', views.delete_shared_cart_item, name='delete_shared_cart_item'),
     path('cart/shared/item/<int:item_id>/add/', views.add_shared_item_to_cart, name='add_shared_item_to_cart'),
     path('cart/shared/item/<int:item_id>/purchase/<str:action>/', views.start_linked_cart_purchase, name='start_linked_cart_purchase'),
     path('cart/stop-sharing/', views.stop_sharing_cart, name='stop_sharing_cart'),

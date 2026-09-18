@@ -906,6 +906,38 @@ def toggle_cart_item_shared(req):
     return redirect('store:cart')
 
 
+@login_required
+@require_POST
+def delete_shared_cart_item(req, item_id):
+    """Remove a shared-cart item from the current user's shared view.
+
+    Owners keep the product in their personal cart; deleting from "Cart I
+    Shared" simply turns sharing off. For an incoming item, deleting removes
+    only the current recipient's share relationship, leaving the owner's item
+    and other recipients untouched.
+    """
+    item = get_object_or_404(
+        CartItem.objects.select_related("cart__user", "product"),
+        id=item_id,
+        product__is_active=True,
+    )
+
+    if item.cart.user_id == req.user.id:
+        item.is_shared = False
+        item.save(update_fields=["is_shared"])
+        CartItemShare.objects.filter(cart_item=item).delete()
+        return JsonResponse({"success": True, "mode": "owner"})
+
+    deleted, _ = CartItemShare.objects.filter(
+        cart_item=item, recipient=req.user
+    ).delete()
+    if not deleted:
+        return JsonResponse(
+            {"success": False, "error": "This shared item is no longer available to you."},
+            status=404,
+        )
+    return JsonResponse({"success": True, "mode": "recipient"})
+
 def _visible_shared_item(req, item_id, token=None):
     """Fetch a shared cart item the requester is allowed to act on: either it
     is exposed through the share link `token`, or its owner is linked to the

@@ -83,6 +83,48 @@
     .cart-item-row .cart-item-price .fs-5 { font-size: 1.1rem !important; }
     .cart-item-row .cart-item-price button { margin-top: 0 !important; }
 }
+.shared-section-head {
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    margin-bottom:14px;
+}
+.shared-item-card {
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:14px;
+    background:var(--surface);
+    box-shadow:0 5px 18px rgba(0,0,0,.04);
+}
+.shared-item-main { display:flex; align-items:center; gap:12px; min-width:0; }
+.shared-item-image {
+    width:72px; height:72px; flex:0 0 72px; object-fit:contain;
+    background:#fff; border:1px solid var(--border); border-radius:12px;
+}
+.shared-item-info { min-width:0; flex:1; }
+.shared-item-title { font-weight:700; margin:0 0 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.shared-item-meta { font-size:.78rem; color:var(--text-muted,#6c757d); }
+.shared-item-price { font-size:1.05rem; font-weight:800; white-space:nowrap; }
+.shared-recipient-box {
+    margin-top:12px; padding:11px 12px; border:1px solid var(--border);
+    border-radius:12px; background:var(--card-bg,rgba(255,255,255,.45));
+}
+.shared-recipient-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.shared-recipient {
+    display:inline-flex; align-items:center; gap:5px; padding:4px 9px;
+    border-radius:999px; border:1px solid var(--border); font-size:.75rem;
+}
+.shared-item-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.shared-delete-btn {
+    width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid rgba(220,53,69,.25); color:#dc3545; background:transparent;
+    border-radius:10px;
+}
+.shared-delete-btn:hover { background:rgba(220,53,69,.08); }
+@media (max-width:767px) {
+    .shared-item-main { align-items:flex-start; }
+    .shared-item-image { width:60px; height:60px; flex-basis:60px; }
+    .shared-item-price { font-size:.95rem; }
+    .shared-section-head { align-items:flex-start; }
+}
 </style>
 {% endblock %}
 
@@ -216,31 +258,42 @@
 
         {% if my_shared_items %}
           {% for entry in my_shared_items %}
-          <div class="card border-theme bg-card p-3 mb-3">
-            <div class="d-flex align-items-center gap-3">
-              <img src="{{ entry.item.product.get_image }}" style="width:58px;height:58px;object-fit:contain;background:#fff;" class="rounded border-theme" alt="">
-              <div class="flex-grow-1 min-w-0">
-                <h6 class="fw-bold mb-1 text-truncate">{{ entry.item.product.name }}</h6>
-                <small class="text-muted">Qty: {{ entry.item.quantity }}</small>
+          <div class="shared-item-card mb-3" id="shared-item-{{ entry.item.id }}">
+            <div class="shared-item-main">
+              <a href="{% url 'store:product_detail' entry.item.product.slug %}">
+                <img src="{{ entry.item.product.get_image }}" class="shared-item-image" alt="{{ entry.item.product.name }}">
+              </a>
+              <div class="shared-item-info">
+                <h6 class="shared-item-title">{{ entry.item.product.name }}</h6>
+                <div class="shared-item-meta">Quantity: {{ entry.item.quantity }}</div>
+                {% if entry.item.color %}<div class="shared-item-meta">Color: {{ entry.item.color }}</div>{% endif %}
+                {% if entry.item.size %}<div class="shared-item-meta">Size: {{ entry.item.size }}</div>{% endif %}
               </div>
-              <strong class="product-price">GH₵{{ entry.item.product.price|floatformat:2 }}</strong>
+              <div class="text-end">
+                <div class="shared-item-price product-price">GH₵{{ entry.item.product.price|floatformat:2 }}</div>
+                <button type="button" class="shared-delete-btn mt-2"
+                        onclick="deleteSharedItem({{ entry.item.id }})"
+                        title="Remove from my shared cart" aria-label="Remove {{ entry.item.product.name }}">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </div>
             </div>
-            <div class="mt-3 p-3 rounded border-theme" style="background:var(--surface);">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="small fw-bold"><i class="bi bi-person-plus me-1"></i>Recipients</span>
+            <div class="shared-recipient-box">
+              <div class="d-flex justify-content-between align-items-center gap-2">
+                <span class="small fw-bold"><i class="bi bi-people me-1"></i>Shared with</span>
                 <button type="button" class="btn btn-sm btn-primary"
                         onclick="openRecipientPicker({{ entry.item.id }})">
-                  <i class="bi bi-pencil-square me-1"></i>Choose people
+                  <i class="bi bi-person-plus me-1"></i>Choose people
                 </button>
               </div>
               {% if entry.recipients %}
-                <div class="d-flex flex-wrap gap-1">
+                <div class="shared-recipient-list">
                   {% for share in entry.recipients %}
-                    <span class="badge rounded-pill text-bg-light border">{{ share.recipient.username }}</span>
+                    <span class="shared-recipient"><i class="bi bi-person"></i>{{ share.recipient.username }}</span>
                   {% endfor %}
                 </div>
               {% else %}
-                <small class="text-muted">No linked user can see this item yet.</small>
+                <small class="text-muted d-block mt-2">No recipients selected yet.</small>
               {% endif %}
             </div>
           </div>
@@ -269,16 +322,28 @@
 
         {% if shared_items %}
           {% for entry in shared_items %}
-          <div class="card border-theme bg-card p-3 mb-3">
-            <div class="d-flex align-items-center gap-3 flex-wrap">
-              <img src="{{ entry.item.product.get_image }}" style="width:60px;height:60px;object-fit:contain;background:#fff;" class="rounded border-theme" alt="">
-              <div class="flex-grow-1 min-w-0">
-                <h6 class="fw-bold mb-1">{{ entry.item.product.name }}</h6>
-                <small class="text-muted">Qty: {{ entry.item.quantity }} · via {{ entry.owner.username }}{% if entry.relation %} ({{ entry.relation }}){% endif %}</small>
+          <div class="shared-item-card mb-3" id="shared-item-{{ entry.item.id }}">
+            <div class="shared-item-main">
+              <a href="{% url 'store:product_detail' entry.item.product.slug %}">
+                <img src="{{ entry.item.product.get_image }}" class="shared-item-image" alt="{{ entry.item.product.name }}">
+              </a>
+              <div class="shared-item-info">
+                <h6 class="shared-item-title">{{ entry.item.product.name }}</h6>
+                <div class="shared-item-meta">Quantity: {{ entry.item.quantity }} · Shared by {{ entry.owner.username }}</div>
+                {% if entry.relation %}<div class="shared-item-meta">{{ entry.relation }}</div>{% endif %}
+                {% if entry.item.color %}<div class="shared-item-meta">Color: {{ entry.item.color }}</div>{% endif %}
+                {% if entry.item.size %}<div class="shared-item-meta">Size: {{ entry.item.size }}</div>{% endif %}
               </div>
-              <div class="fw-bold product-price">GH₵{{ entry.subtotal|floatformat:2 }}</div>
+              <div class="text-end">
+                <div class="shared-item-price product-price">GH₵{{ entry.subtotal|floatformat:2 }}</div>
+                <button type="button" class="shared-delete-btn mt-2"
+                        onclick="deleteSharedItem({{ entry.item.id }})"
+                        title="Remove from shared with me" aria-label="Remove {{ entry.item.product.name }}">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </div>
             </div>
-            <div class="d-flex gap-2 flex-wrap mt-3">
+            <div class="shared-item-actions">
               <form method="post" action="{% url 'store:start_linked_cart_purchase' entry.item.id 'gift' %}">
                 {% csrf_token %}
                 <button class="btn btn-primary btn-sm"><i class="bi bi-gift me-1"></i>Buy for {{ entry.owner.username }}</button>
@@ -492,6 +557,23 @@ function saveRecipients(itemId) {
     body
   }).then(r => r.json()).then(data => {
     if (!data.success) throw new Error(data.error || 'Could not update recipients.');
+    location.reload();
+  }).catch(err => alert(err.message));
+}
+
+function deleteSharedItem(itemId) {
+  if (!confirm('Remove this product from this shared cart?')) return;
+  fetch(`/cart/shared/item/${itemId}/delete/`, {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': '{{ csrf_token }}',
+      'X-Requested-With': 'XMLHttpRequest'
+    }
+  }).then(async res => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) throw new Error(data.error || 'Could not remove the shared item.');
+    const card = document.getElementById('shared-item-' + itemId);
+    if (card) card.remove();
     location.reload();
   }).catch(err => alert(err.message));
 }
