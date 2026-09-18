@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/save-delivery-info/", views.save_delivery_info, name="save_delivery_info"),
     path('admin/notifications/read/', views.mark_notifications_read, name='mark_notifications_read'),
     path('notifications/read/', views.mark_user_notifications_read, name='mark_user_notifications_read'),
+    path('api/live-updates/', views.live_updates, name='live_updates'),
     path("api/chatbot/recommend/", views.chatbot_recommend, name="chatbot_recommend"),
     # ==================== CART (UUID Compatible) ====================
 

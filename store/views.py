@@ -3500,7 +3500,13 @@ def approve_seller(request, seller_id):
     seller.is_verified = True
     seller.verified_at = timezone.now()
     seller.save()
-    
+
+    UserNotification.objects.create(
+        user=seller.user,
+        title="Seller application approved 🎉",
+        message=f"Congratulations! Your seller application for {seller.store_name} has been approved. You can now start selling on ShopVibe.",
+        link=reverse("store:seller_dashboard"),
+    )
     # Clear related notifications
     AdminNotification.objects.filter(link__contains=str(seller_id)).update(is_read=True)
     messages.success(request, f"✅ '{seller.store_name}' has been approved.")
@@ -3534,6 +3540,43 @@ def mark_notifications_read(request):
 def is_admin(user): return user.is_staff or user.is_superuser
 
 @login_required
+def live_updates(request):
+    """Lightweight polling endpoint for site-wide live notification/status updates."""
+    payload = {
+        "notifications": [],
+        "notification_count": UserNotification.objects.filter(user=request.user, is_read=False).count(),
+        "seller_status": None,
+        "seller_verified_at": None,
+    }
+    for n in UserNotification.objects.filter(user=request.user).order_by("-created_at")[:5]:
+        payload["notifications"].append({
+            "id": n.id,
+            "title": n.title,
+            "message": n.message,
+            "link": n.link or "#",
+            "is_read": n.is_read,
+            "created_at": n.created_at.isoformat(),
+        })
+    try:
+        seller = request.user.seller_profile
+        payload["seller_status"] = seller.status
+        payload["seller_verified_at"] = seller.verified_at.isoformat() if seller.verified_at else None
+    except SellerProfile.DoesNotExist:
+        pass
+
+    if request.user.is_staff or request.user.is_superuser:
+        payload["admin_notification_count"] = AdminNotification.objects.filter(is_read=False).count()
+        payload["admin_notifications"] = [
+            {"id": n.id, "title": n.title, "message": n.message, "link": n.link or "#", "created_at": n.created_at.isoformat()}
+            for n in AdminNotification.objects.filter(is_read=False).order_by("-created_at")[:5]
+        ]
+    else:
+        payload["admin_notification_count"] = 0
+        payload["admin_notifications"] = []
+
+    return JsonResponse(payload)
+
+@login_required
 def mark_user_notifications_read(request):
     UserNotification.objects.filter(user=request.user, is_read=False).update(is_read=True)
     return redirect(request.META.get('HTTP_REFERER', 'store:home'))
@@ -3556,6 +3599,12 @@ def seller_application_detail(request, seller_id):
             seller.is_verified = True
             seller.verified_at = timezone.now()
             seller.save()
+            UserNotification.objects.create(
+                user=seller.user,
+                title="Seller application approved 🎉",
+                message=f"Congratulations! Your seller application for {seller.store_name} has been approved. You can now start selling on ShopVibe.",
+                link=reverse("store:seller_dashboard"),
+            )
             messages.success(request, f"✅ '{seller.store_name}' has been APPROVED. User is now a seller.")
             
         elif action == 'reject':
