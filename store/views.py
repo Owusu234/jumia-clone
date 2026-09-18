@@ -14,6 +14,7 @@ from django.db.models import Q, Sum, Count, F
 from django.db.models.functions import TruncMonth
 from django.utils.text import slugify
 from django.contrib.auth import login as django_login, logout as django_logout
+from django.contrib.auth import update_session_auth_hash
 from django.conf import settings
 from django.urls import reverse
 from django.http import HttpResponse, Http404
@@ -2283,17 +2284,27 @@ def seller_signup(req):
                     # Update existing user (don't create new one)
                     user = req.user
                     user.email = form.cleaned_data['email']
-                    if form.cleaned_data['password']:  # Only update if new password provided
+                    password_changed = bool(form.cleaned_data.get('password'))
+                    if password_changed:
                         user.set_password(form.cleaned_data['password'])
                     user.save()
-                    
-                    # Create SellerProfile linked to existing user
+
+                    # Keep the current authenticated session valid if the seller
+                    # application also changes the user's password. Without this,
+                    # Django invalidates the session on the next request.
+                    if password_changed:
+                        update_session_auth_hash(req, user)
+
+                    # Create SellerProfile linked to existing user. All seller
+                    # application fields are explicitly persisted.
                     seller_profile = SellerProfile.objects.create(
                         user=user,
                         store_name=form.cleaned_data['store_name'],
+                        description=form.cleaned_data['description'],
                         phone=form.cleaned_data['phone'],
                         address=form.cleaned_data['address'],
-                        payment_number=form.cleaned_data.get('payment_number', ''),
+                        region=form.cleaned_data['region'],
+                        payment_number=form.cleaned_data['payment_number'],
                         status='pending',
                         is_verified=False
                     )

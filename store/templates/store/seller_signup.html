@@ -161,49 +161,18 @@
 <!-- ✅ YOUR EXISTING JAVASCRIPT (100% Preserved) -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const countrySelect = document.getElementById('id_country');
     const paymentInput = document.getElementById('id_payment_number');
-    
-    if (!countrySelect || !paymentInput) return;
+    if (!paymentInput) return;
 
-    // Auto-format payment number when country changes
-    countrySelect.addEventListener('change', function() {
-        const selectedOption = this.options[this.selectedIndex];
-        const phoneCode = selectedOption.dataset.phoneCode || '+233';
-        
-        // Update placeholder
-        paymentInput.placeholder = phoneCode.replace('+', '') + ' XX XXX XXXX';
-        
-        // Auto-format existing value
-        if (paymentInput.value) {
-            formatPaymentNumber(phoneCode);
-        }
-    });
-
-    // Clean input on typing (allow only + and digits)
+    // Keep payment number input safe and convenient without requiring
+    // a country dropdown. Country is a text field in this form.
     paymentInput.addEventListener('input', function() {
-        let val = this.value.replace(/[^\d+]/g, '');
-        if (val.startsWith('+')) {
-            val = '+' + val.substring(1).replace(/\+/g, '');
+        let value = this.value.replace(/[^\d+]/g, '');
+        if (value.includes('+')) {
+            value = (value.startsWith('+') ? '+' : '') + value.replace(/\+/g, '');
         }
-        this.value = val;
+        this.value = value;
     });
-
-    // Helper: Format to +CodeNumber
-    function formatPaymentNumber(phoneCode) {
-        let val = paymentInput.value.replace(/[^\d]/g, ''); // Keep only digits
-        if (val.startsWith('0')) {
-            val = val.substring(1); // Remove leading 0
-        }
-        paymentInput.value = phoneCode + val;
-    }
-
-    // Pre-select user's country if exists
-    const userCountryId = "{{ user.user_profile.country.id|default:'' }}";
-    if (userCountryId) {
-        countrySelect.value = userCountryId;
-        countrySelect.dispatchEvent(new Event('change'));
-    }
 });
 </script>
 {% endblock %}
