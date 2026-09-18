@@ -496,7 +496,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // scroll or requiring a manual refresh. Only the homepage polls.
     const updateUrl = "{% url 'store:home_live_updates' %}";
     let lastProductId = null;
-    let lastProductCreatedAt = null;
     let checking = false;
 
     async function checkForNewProducts() {
@@ -512,11 +511,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
             if (lastProductId === null) {
                 lastProductId = data.latest_product_id;
-                lastProductCreatedAt = data.latest_product_created_at;
                 return;
             }
-            const changed = data.latest_product_id !== lastProductId ||
-                data.latest_product_created_at !== lastProductCreatedAt;
+            const changed = data.latest_product_id !== lastProductId;
             if (changed) {
                 // Reload the current homepage URL so both All Products and
                 // New from sellers you follow are rebuilt from the database.
