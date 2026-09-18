@@ -3491,6 +3491,32 @@ def seller_daily_sales_api(req):
 
 def is_admin(user): return user.is_staff or user.is_superuser
 
+def _notify_seller_approved(seller):
+    """Create one congratulatory in-app notification for an approved seller."""
+    if not getattr(seller, "user_id", None):
+        return
+    try:
+        link = reverse("store:seller_dashboard")
+        title = "🎉 Seller application approved!"
+        if not UserNotification.objects.filter(
+            user_id=seller.user_id, title=title, link=link
+        ).exists():
+            UserNotification.objects.create(
+                user_id=seller.user_id,
+                title=title,
+                message=(
+                    f"Congratulations! Your seller application for "
+                    f"{seller.store_name} has been approved. "
+                    "You can now start selling on ShopVibe."
+                ),
+                link=link,
+            )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to create seller approval notification"
+        )
+
+
 @login_required
 @user_passes_test(is_admin)
 @require_POST
@@ -3500,6 +3526,7 @@ def approve_seller(request, seller_id):
     seller.is_verified = True
     seller.verified_at = timezone.now()
     seller.save()
+    _notify_seller_approved(seller)
     
     # Clear related notifications
     AdminNotification.objects.filter(link__contains=str(seller_id)).update(is_read=True)
@@ -3556,6 +3583,7 @@ def seller_application_detail(request, seller_id):
             seller.is_verified = True
             seller.verified_at = timezone.now()
             seller.save()
+            _notify_seller_approved(seller)
             messages.success(request, f"✅ '{seller.store_name}' has been APPROVED. User is now a seller.")
             
         elif action == 'reject':
