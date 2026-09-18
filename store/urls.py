@@ -8,6 +8,7 @@ urlpatterns = [
     # ==================== CORE STOREFRONT ====================
     
     path("", views.home, name="home"),
+    path("api/home/live-updates/", views.home_live_updates, name="home_live_updates"),
     path("wishlist/", views.wishlist, name="wishlist"),
     path("api/wishlist/products/", views.wishlist_products_api, name="wishlist_products_api"),
     path("product/<slug:slug>/", views.product_detail, name="product_detail"),
@@ -19,7 +20,6 @@ urlpatterns = [
     path("api/save-delivery-info/", views.save_delivery_info, name="save_delivery_info"),
     path('admin/notifications/read/', views.mark_notifications_read, name='mark_notifications_read'),
     path('notifications/read/', views.mark_user_notifications_read, name='mark_user_notifications_read'),
-    path('api/live-updates/', views.live_updates, name='live_updates'),
     path("api/chatbot/recommend/", views.chatbot_recommend, name="chatbot_recommend"),
     # ==================== CART (UUID Compatible) ====================
 
