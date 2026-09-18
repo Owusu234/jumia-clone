@@ -443,28 +443,16 @@ def home(req):
     products = paginator.get_page(req.GET.get("page"))
     cart_count = len(req.session.get('cart', {})) if req.session else 0
 
-    # Show only the newest active upload from each seller the user follows.
-    # This prevents the seller's entire catalogue from appearing in this section.
     followed_updates = []
     if req.user.is_authenticated:
         followed_ids = list(
             SellerFollow.objects.filter(buyer=req.user).values_list('seller_id', flat=True)
         )
         if followed_ids:
-            latest_by_seller = {}
-            followed_products = (
+            followed_updates = list(
                 Product.objects.filter(seller_id__in=followed_ids, is_active=True)
                 .select_related('seller')
-                .order_by('seller_id', '-created_at', '-id')
-            )
-            for product in followed_products:
-                if product.seller_id not in latest_by_seller:
-                    latest_by_seller[product.seller_id] = product
-
-            followed_updates = sorted(
-                latest_by_seller.values(),
-                key=lambda product: (product.created_at, product.id),
-                reverse=True,
+                .order_by('-created_at')[:12]
             )
 
     return render(req, "store/home.html", {

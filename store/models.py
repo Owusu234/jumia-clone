@@ -408,29 +408,6 @@ class CartItem(models.Model):
     def __str__(self): return f"{self.quantity}x {self.product.name}"
 
 
-class CartItemShare(models.Model):
-    """Explicit recipient for an item in an account-linked shared cart."""
-    cart_item = models.ForeignKey(
-        CartItem, on_delete=models.CASCADE, related_name="recipient_shares"
-    )
-    recipient = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="received_cart_item_shares"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["cart_item", "recipient"],
-                name="unique_cart_item_recipient_share",
-            )
-        ]
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"{self.cart_item.product.name} → {self.recipient.username}"
-
-
 class SharedCartLink(models.Model):
     """A simple shareable link to a user's cart. Anyone with the link can
     see what's in the owner's cart (great for surprise gifts) — but never
