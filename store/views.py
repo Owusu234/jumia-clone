@@ -38,7 +38,7 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-from .models import Product, Category, Cart, CartItem, SharedCartLink, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
+from .models import Product, Category, Cart, CartItem, SharedCartLink, CartInvite, CartItemShare, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
 from .models import Conversation, ChatMessage, Invoice
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
 from django.core.files.base import ContentFile
@@ -443,17 +443,29 @@ def home(req):
     products = paginator.get_page(req.GET.get("page"))
     cart_count = len(req.session.get('cart', {})) if req.session else 0
 
+    # Show only each followed seller's newest upload during the
+    # "new" window. Older products remain in All Products.
     followed_updates = []
     if req.user.is_authenticated:
         followed_ids = list(
             SellerFollow.objects.filter(buyer=req.user).values_list('seller_id', flat=True)
         )
         if followed_ids:
-            followed_updates = list(
-                Product.objects.filter(seller_id__in=followed_ids, is_active=True)
+            cutoff = timezone.now() - timedelta(days=7)
+            recent = (
+                Product.objects.filter(
+                    seller_id__in=followed_ids,
+                    is_active=True,
+                    created_at__gte=cutoff,
+                )
                 .select_related('seller')
-                .order_by('-created_at')[:12]
+                .order_by('seller_id', '-created_at')
             )
+            seen_sellers = set()
+            for product in recent:
+                if product.seller_id not in seen_sellers:
+                    followed_updates.append(product)
+                    seen_sellers.add(product.seller_id)
 
     return render(req, "store/home.html", {
         "products": products,
@@ -837,6 +849,48 @@ def toggle_cart_item_shared(req):
     return redirect('store:cart')
 
 
+
+@login_required
+@require_POST
+def update_cart_item_recipients(req):
+    """Set the linked-account recipients for one of the current user's
+    shared cart items. An empty recipient list revokes targeted sharing."""
+    item_id = req.POST.get('item_id')
+    item = get_object_or_404(
+        CartItem.objects.select_related('cart'),
+        id=item_id, cart__user=req.user
+    )
+    if not item.is_shared:
+        return JsonResponse({'success': False, 'error': 'Share the cart item first.'}, status=400)
+
+    recipient_ids = []
+    raw = req.POST.getlist('recipient_ids')
+    for value in raw:
+        try:
+            recipient_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+
+    linked_ids = {u.id for u in get_linked_users(req.user)}
+    invalid = set(recipient_ids) - linked_ids
+    if invalid:
+        return JsonResponse({'success': False, 'error': 'One or more recipients are not linked to your cart.'}, status=400)
+
+    CartItemShare.objects.filter(item=item).exclude(recipient_id__in=recipient_ids).delete()
+    existing = set(
+        CartItemShare.objects.filter(item=item, recipient_id__in=recipient_ids)
+        .values_list('recipient_id', flat=True)
+    )
+    CartItemShare.objects.bulk_create(
+        [CartItemShare(item=item, recipient_id=uid) for uid in recipient_ids if uid not in existing]
+    )
+    return JsonResponse({
+        'success': True,
+        'recipient_ids': recipient_ids,
+        'count': len(recipient_ids),
+    })
+
+
 def _visible_shared_item(req, item_id, token=None):
     """Fetch a shared cart item the requester is allowed to act on: either it
     is exposed through the share link `token`, or its owner is linked to the
@@ -1177,20 +1231,65 @@ def cart(req):
 
     active_links = []
     shared_items, shared_total, shared_count = [], Decimal('0.00'), 0
+    my_shared_items = []
+    my_shared_total = Decimal('0.00')
+
+    linked_user_ids = set()
     for invite in active_invites:
         other = invite.other_party(req.user)
         if not other:
             continue
-        active_links.append({'invite': invite, 'user': other, 'relation': invite.get_relation_display()})
-        try:
-            other_cart = other.cart
-        except Cart.DoesNotExist:
-            continue
-        for ci in other_cart.items.select_related('product').filter(product__is_active=True, is_shared=True):
+        linked_user_ids.add(other.id)
+        active_links.append({
+            'invite': invite,
+            'user': other,
+            'relation': invite.get_relation_display(),
+        })
+
+    # "Cart shared to me": only items explicitly shared with this user.
+    if linked_user_ids:
+        incoming_qs = (
+            CartItem.objects
+            .filter(
+                cart__user_id__in=linked_user_ids,
+                product__is_active=True,
+                is_shared=True,
+                recipient_shares__recipient=req.user,
+            )
+            .select_related('product', 'cart__user')
+            .prefetch_related('recipient_shares__recipient')
+            .distinct()
+        )
+        for ci in incoming_qs:
+            owner = ci.cart.user
+            invite = next(
+                (x for x in active_links if x['user'].id == owner.id), None
+            )
+            relation = invite['relation'] if invite else 'Linked account'
             subtotal = ci.product.price * Decimal(str(ci.quantity))
-            shared_items.append({'item': ci, 'owner': other, 'relation': invite.get_relation_display(), 'subtotal': subtotal})
+            shared_items.append({
+                'item': ci, 'owner': owner, 'relation': relation,
+                'subtotal': subtotal,
+            })
             shared_total += subtotal
             shared_count += ci.quantity
+
+    # "Cart I shared": own shared items plus their selected recipients.
+    own_shared_qs = (
+        CartItem.objects.filter(
+            cart__user=req.user, is_shared=True, product__is_active=True
+        )
+        .select_related('product')
+        .prefetch_related('recipient_shares__recipient')
+    )
+    for ci in own_shared_qs:
+        recipients = list(ci.recipient_shares.all())
+        my_shared_total += ci.product.price * Decimal(str(ci.quantity))
+        my_shared_items.append({
+            'item': ci,
+            'recipients': recipients,
+            'recipient_count': len(recipients),
+        })
 
     return render(req, 'store/cart.html', {
         'cart_items': cart_items, 'cart_total': cart_total, 'cart_count': cart_count,
@@ -1199,6 +1298,7 @@ def cart(req):
         'pending_sent': pending_sent,
         'pending_received': pending_received,
         'shared_items': shared_items, 'shared_total': shared_total, 'shared_count': shared_count,
+        'my_shared_items': my_shared_items, 'my_shared_total': my_shared_total,
         'relation_choices': CartInvite.RELATION_CHOICES,
     })
 

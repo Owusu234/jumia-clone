@@ -191,23 +191,92 @@
 
     <!-- ===================== SHARED CART TAB ===================== -->
     <div class="bag-tab-panel" id="bagTabShared">
-      {% if active_links %}
+      <div class="d-flex gap-2 mb-4" role="tablist" aria-label="Shared cart options">
+        <button type="button" class="btn btn-primary flex-fill" id="sharedOptionMine"
+                onclick="showSharedCartOption('mine')">
+          <i class="bi bi-box-arrow-up-right me-1"></i>Cart I Shared
+        </button>
+        <button type="button" class="btn btn-outline-primary flex-fill" id="sharedOptionIncoming"
+                onclick="showSharedCartOption('incoming')">
+          <i class="bi bi-box-arrow-in-down-left me-1"></i>Cart Shared to Me
+        </button>
+      </div>
+
+      <!-- Cart I Shared -->
+      <section id="sharedOptionPanelMine">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <h6 class="fw-bold mb-0"><i class="bi bi-people me-2"></i>Shared with you</h6>
+          <div>
+            <h6 class="fw-bold mb-1"><i class="bi bi-share me-2"></i>Cart I Shared</h6>
+            <small class="text-muted">Choose exactly which linked people can see each item.</small>
+          </div>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#linkedCartsModal">
-            <i class="bi bi-gear me-1"></i>Manage
+            <i class="bi bi-people me-1"></i>Manage links
           </button>
         </div>
+
+        {% if my_shared_items %}
+          {% for entry in my_shared_items %}
+          <div class="card border-theme bg-card p-3 mb-3">
+            <div class="d-flex align-items-center gap-3">
+              <img src="{{ entry.item.product.get_image }}" style="width:58px;height:58px;object-fit:contain;background:#fff;" class="rounded border-theme" alt="">
+              <div class="flex-grow-1 min-w-0">
+                <h6 class="fw-bold mb-1 text-truncate">{{ entry.item.product.name }}</h6>
+                <small class="text-muted">Qty: {{ entry.item.quantity }}</small>
+              </div>
+              <strong class="product-price">GH₵{{ entry.item.product.price|floatformat:2 }}</strong>
+            </div>
+            <div class="mt-3 p-3 rounded border-theme" style="background:var(--surface);">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-bold"><i class="bi bi-person-plus me-1"></i>Recipients</span>
+                <button type="button" class="btn btn-sm btn-primary"
+                        onclick="openRecipientPicker({{ entry.item.id }})">
+                  <i class="bi bi-pencil-square me-1"></i>Choose people
+                </button>
+              </div>
+              {% if entry.recipients %}
+                <div class="d-flex flex-wrap gap-1">
+                  {% for share in entry.recipients %}
+                    <span class="badge rounded-pill text-bg-light border">{{ share.recipient.username }}</span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <small class="text-muted">No linked user can see this item yet.</small>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center py-5">
+            <i class="bi bi-share fs-1 text-muted"></i>
+            <h6 class="fw-bold mt-3">Nothing shared yet</h6>
+            <p class="text-muted small mb-3">Turn on sharing for a cart item, then choose the linked people who should receive it.</p>
+            <button type="button" class="btn btn-primary" onclick="showBagTab('personal')">View my cart</button>
+          </div>
+        {% endif %}
+      </section>
+
+      <!-- Cart Shared to Me -->
+      <section id="sharedOptionPanelIncoming" class="d-none">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h6 class="fw-bold mb-1"><i class="bi bi-box-arrow-in-down-left me-2"></i>Cart Shared to Me</h6>
+            <small class="text-muted">Items that linked users have specifically shared with you.</small>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#linkedCartsModal">
+            <i class="bi bi-people me-1"></i>Manage links
+          </button>
+        </div>
+
         {% if shared_items %}
           {% for entry in shared_items %}
           <div class="card border-theme bg-card p-3 mb-3">
             <div class="d-flex align-items-center gap-3 flex-wrap">
-              <img src="{{ entry.item.product.get_image }}" style="width: 60px; height: 60px; object-fit: contain; background:#fff;" class="rounded border-theme">
-              <div class="flex-grow-1">
+              <img src="{{ entry.item.product.get_image }}" style="width:60px;height:60px;object-fit:contain;background:#fff;" class="rounded border-theme" alt="">
+              <div class="flex-grow-1 min-w-0">
                 <h6 class="fw-bold mb-1">{{ entry.item.product.name }}</h6>
-                <small class="text-muted">Qty: {{ entry.item.quantity }} · via {{ entry.owner.username }} ({{ entry.relation }})</small>
+                <small class="text-muted">Qty: {{ entry.item.quantity }} · via {{ entry.owner.username }}{% if entry.relation %} ({{ entry.relation }}){% endif %}</small>
               </div>
-              <div class="fw-bold product-price text-primary">GH₵{{ entry.subtotal|floatformat:2 }}</div>
+              <div class="fw-bold product-price">GH₵{{ entry.subtotal|floatformat:2 }}</div>
             </div>
             <div class="d-flex gap-2 flex-wrap mt-3">
               <form method="post" action="{% url 'store:start_linked_cart_purchase' entry.item.id 'gift' %}">
@@ -224,29 +293,56 @@
           <hr class="border-theme my-3">
           <div class="d-flex justify-content-between">
             <span class="fw-bold">Shared total</span>
-            <span class="fw-bold product-price text-primary">GH₵{{ shared_total|floatformat:2 }}</span>
+            <span class="fw-bold product-price">GH₵{{ shared_total|floatformat:2 }}</span>
           </div>
         {% else %}
-          <p class="text-muted text-center py-4">Your linked partners haven't shared any items yet.</p>
-        {% endif %}
-      {% else %}
-        <div class="text-center py-4">
-          <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
-               style="width:56px; height:56px; background: color-mix(in srgb, var(--p) 15%, transparent);">
-            <i class="bi bi-link-45deg fs-3" style="color: var(--p);"></i>
+          <div class="text-center py-5">
+            <i class="bi bi-inbox fs-1 text-muted"></i>
+            <h6 class="fw-bold mt-3">Nothing shared to you yet</h6>
+            <p class="text-muted small">When a linked user selects you as a recipient, their shared items will appear here.</p>
           </div>
-          <h6 class="fw-bold">Collaborative Shopping with Partners</h6>
-          <p class="text-muted small mb-4 px-2">
-            Invite your spouse, parent, business partner, or friend.
-            Cart updates, item additions, and size changes synchronize instantly across all devices.
-          </p>
-          <button type="button" class="btn btn-primary w-100 py-2 fw-bold" data-bs-toggle="modal" data-bs-target="#linkedCartsModal">
-            <i class="bi bi-people me-1"></i>Link Account / Invite Partner
-          </button>
+        {% endif %}
+      </section>
+
+      {% if active_links %}
+      <!-- Recipient picker modals -->
+      {% for entry in my_shared_items %}
+      <div class="modal fade" id="recipientModal{{ entry.item.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content bg-card border-theme">
+            <div class="modal-header border-theme">
+              <div>
+                <h5 class="modal-title fw-bold">Choose who receives this item</h5>
+                <small class="text-muted">{{ entry.item.product.name }}</small>
+              </div>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="d-flex flex-column gap-2">
+                {% for link in active_links %}
+                <label class="d-flex align-items-center gap-3 p-2 rounded border-theme">
+                  <input class="form-check-input recipient-choice-{{ entry.item.id }}" type="checkbox"
+                         value="{{ link.user.id }}"
+                         {% for share in entry.recipients %}{% if share.recipient_id == link.user.id %}checked{% endif %}{% endfor %}>
+                  <span class="flex-grow-1">
+                    <strong>{{ link.user.username }}</strong>
+                    <small class="d-block text-muted">{{ link.relation }}</small>
+                  </span>
+                </label>
+                {% endfor %}
+              </div>
+              <small class="text-muted d-block mt-3">Only accepted linked accounts can be selected.</small>
+            </div>
+            <div class="modal-footer border-theme">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-primary" onclick="saveRecipients({{ entry.item.id }})">Save recipients</button>
+            </div>
+          </div>
         </div>
+      </div>
+      {% endfor %}
       {% endif %}
     </div>
-  </div>
 </div>
 
 <!-- ===================== LINKED SHARED CARTS MODAL ===================== -->
@@ -368,6 +464,36 @@ function toggleShareItem(cartKey, checkbox) {
     checkbox.checked = !wanted;
     alert('Network error. Please try again.');
   }).finally(() => { checkbox.disabled = false; });
+}
+
+function showSharedCartOption(option) {
+  const mine = option === 'mine';
+  document.getElementById('sharedOptionPanelMine').classList.toggle('d-none', !mine);
+  document.getElementById('sharedOptionPanelIncoming').classList.toggle('d-none', mine);
+  document.getElementById('sharedOptionMine').classList.toggle('btn-primary', mine);
+  document.getElementById('sharedOptionMine').classList.toggle('btn-outline-primary', !mine);
+  document.getElementById('sharedOptionIncoming').classList.toggle('btn-primary', !mine);
+  document.getElementById('sharedOptionIncoming').classList.toggle('btn-outline-primary', mine);
+}
+
+function openRecipientPicker(itemId) {
+  const el = document.getElementById('recipientModal' + itemId);
+  if (el && window.bootstrap) bootstrap.Modal.getOrCreateInstance(el).show();
+}
+
+function saveRecipients(itemId) {
+  const ids = [...document.querySelectorAll('.recipient-choice-' + itemId + ':checked')].map(el => el.value);
+  const body = new URLSearchParams();
+  body.append('item_id', itemId);
+  ids.forEach(id => body.append('recipient_ids', id));
+  fetch("{% url 'store:update_cart_item_recipients' %}", {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest'},
+    body
+  }).then(r => r.json()).then(data => {
+    if (!data.success) throw new Error(data.error || 'Could not update recipients.');
+    location.reload();
+  }).catch(err => alert(err.message));
 }
 
 function selectRelationTag(btn) {
