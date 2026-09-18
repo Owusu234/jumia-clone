@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models.functions import TruncDay,TruncHour
 from datetime import timezone as dt_timezone
-from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.http import require_POST
 from django.db import transaction, IntegrityError
 from django.contrib.auth import login
 from django.core.mail import send_mail
@@ -396,24 +396,6 @@ def logout_view(req):
 def oauth_callback(req): return redirect("store:home")
 
 # ==================== STOREFRONT ====================
-
-@require_GET
-def home_live_updates(req):
-    """Return a tiny, stable marker used by the homepage polling script.
-
-    The endpoint deliberately uses only the product primary key. This avoids
-    serializing model date values and makes the polling query compatible with
-    older deployments while still detecting newly-created products.
-    """
-    latest_product_id = (
-        Product.objects
-        .filter(is_active=True, stock__gt=0)
-        .order_by('-id')
-        .values_list('id', flat=True)
-        .first()
-    )
-    return JsonResponse({'latest_product_id': latest_product_id})
-
 
 def home(req):
     q = req.GET.get("q", "").strip()

@@ -8,7 +8,6 @@ urlpatterns = [
     # ==================== CORE STOREFRONT ====================
     
     path("", views.home, name="home"),
-    path("api/home/live-updates/", views.home_live_updates, name="home_live_updates"),
     path("wishlist/", views.wishlist, name="wishlist"),
     path("api/wishlist/products/", views.wishlist_products_api, name="wishlist_products_api"),
     path("product/<slug:slug>/", views.product_detail, name="product_detail"),

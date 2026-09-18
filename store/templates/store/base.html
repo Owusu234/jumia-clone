@@ -116,10 +116,10 @@
                     <button class="btn btn-link position-relative border-0 p-1" style="color: var(--tx);" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
                         <i class="bi bi-bell fs-5"></i>
                         {% if user_notification_count > 0 %}
-                        <span id="sv-user-notification-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem; min-width: 18px; height: 18px; padding: 3px;">{{ user_notification_count }}</span>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem; min-width: 18px; height: 18px; padding: 3px;">{{ user_notification_count }}</span>
                         {% endif %}
                     </button>
-                    <ul id="sv-user-notification-menu" class="dropdown-menu dropdown-menu-end shadow" style="min-width: 320px; max-height: 400px; overflow-y: auto;">
+                    <ul class="dropdown-menu dropdown-menu-end shadow" style="min-width: 320px; max-height: 400px; overflow-y: auto;">
                         {% if user_notifications %}
                             {% for notif in user_notifications %}
                             <li><a class="dropdown-item py-2" href="{{ notif.link }}">
@@ -598,70 +598,6 @@
     </script>
 
     {% block extra_js %}{% endblock %}
-
-    <!-- Live updates: refresh notification/status UI without requiring manual page reloads -->
-    <script>
-    (function () {
-        if (!{{ user.is_authenticated|yesno:"true,false" }}) return;
-        const endpoint = "{% url 'store:live_updates' %}";
-        const badge = document.getElementById('sv-user-notification-badge');
-        const menu = document.getElementById('sv-user-notification-menu');
-        let lastSellerStatus = "{{ user.seller_profile.status|default:''|escapejs }}";
-        let lastNotificationIds = [];
-        try { lastNotificationIds = JSON.parse(sessionStorage.getItem('sv_notification_ids') || '[]'); } catch (e) {}
-
-        function escapeHtml(value) {
-            const d = document.createElement('div'); d.textContent = value || ''; return d.innerHTML;
-        }
-        function updateBadge(count) {
-            let el = document.getElementById('sv-user-notification-badge');
-            if (count > 0) {
-                if (!el) {
-                    const btn = document.querySelector('[title="Notifications"]');
-                    if (!btn) return;
-                    el = document.createElement('span');
-                    el.id = 'sv-user-notification-badge';
-                    el.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
-                    el.style.cssText = 'font-size:.6rem;min-width:18px;height:18px;padding:3px;';
-                    btn.appendChild(el);
-                }
-                el.textContent = count;
-                el.style.display = 'inline-block';
-            } else if (el) { el.remove(); }
-        }
-        function updateMenu(items) {
-            if (!menu) return;
-            if (!items || !items.length) {
-                menu.innerHTML = '<li><span class="dropdown-item text-muted text-center py-3">No new notifications</span></li>';
-                return;
-            }
-            menu.innerHTML = items.map(function (n) {
-                return '<li><a class="dropdown-item py-2" href="' + escapeHtml(n.link || '#') + '">' +
-                    '<div class="fw-semibold small">' + escapeHtml(n.title) + '</div>' +
-                    '<div class="text-muted small">' + escapeHtml(n.message) + '</div>' +
-                    '<div class="text-end mt-1"><small class="text-muted">Just now</small></div></a></li>';
-            }).join('') + '<li><hr class="dropdown-divider"></li>' +
-                '<li><a class="dropdown-item text-center text-primary small fw-bold" href="{% url 'store:mark_user_notifications_read' %}">✓ Mark all as read</a></li>';
-        }
-        async function pollLiveUpdates() {
-            try {
-                const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, cache: 'no-store' });
-                if (!res.ok) return;
-                const data = await res.json();
-                updateBadge(data.notification_count || 0);
-                updateMenu((data.notifications || []).filter(n => !n.is_read));
-                if (lastSellerStatus && data.seller_status && lastSellerStatus !== data.seller_status) {
-                    // Approval is especially important: refresh once so seller controls become available immediately.
-                    if (data.seller_status === 'approved') window.location.reload();
-                }
-                lastSellerStatus = data.seller_status || lastSellerStatus;
-                try { sessionStorage.setItem('sv_notification_ids', JSON.stringify((data.notifications || []).map(n => n.id))); } catch (e) {}
-            } catch (e) { /* temporary network failures are harmless */ }
-        }
-        pollLiveUpdates();
-        setInterval(pollLiveUpdates, 10000);
-    })();
-    </script>
 
     <link rel="stylesheet" href="{% static 'store/chatbot-widget.css' %}?v=10">
     <script src="{% static 'store/chatbot-widget.js' %}?v=10"></script>
