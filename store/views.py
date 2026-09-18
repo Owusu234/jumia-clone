@@ -38,7 +38,7 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-from .models import Product, Category, Cart, CartItem, CartItemShare, SharedCartLink, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
+from .models import Product, Category, Cart, CartItem, SharedCartLink, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
 from .models import Conversation, ChatMessage, Invoice
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
 from django.core.files.base import ContentFile
@@ -443,16 +443,28 @@ def home(req):
     products = paginator.get_page(req.GET.get("page"))
     cart_count = len(req.session.get('cart', {})) if req.session else 0
 
+    # Show only the newest active upload from each seller the user follows.
+    # This prevents the seller's entire catalogue from appearing in this section.
     followed_updates = []
     if req.user.is_authenticated:
         followed_ids = list(
             SellerFollow.objects.filter(buyer=req.user).values_list('seller_id', flat=True)
         )
         if followed_ids:
-            followed_updates = list(
+            latest_by_seller = {}
+            followed_products = (
                 Product.objects.filter(seller_id__in=followed_ids, is_active=True)
                 .select_related('seller')
-                .order_by('-created_at')[:12]
+                .order_by('seller_id', '-created_at', '-id')
+            )
+            for product in followed_products:
+                if product.seller_id not in latest_by_seller:
+                    latest_by_seller[product.seller_id] = product
+
+            followed_updates = sorted(
+                latest_by_seller.values(),
+                key=lambda product: (product.created_at, product.id),
+                reverse=True,
             )
 
     return render(req, "store/home.html", {
@@ -659,62 +671,6 @@ def _sync_own_db_cart(user, product, quantity=1, color='', size='', remove=False
         CartItem.objects.update_or_create(
             cart=cart, product=product, color=color or '', size=size or '',
             defaults={'quantity': quantity, 'added_by': user})
-
-def update_cart_item_recipients(req):
-    """Set the accepted linked users who can see an owner's shared cart item."""
-    if not req.user.is_authenticated:
-        return JsonResponse({"success": False, "error": "Authentication required."}, status=401)
-
-    item_id = req.POST.get("item_id")
-    if not item_id:
-        return JsonResponse({"success": False, "error": "Cart item is required."}, status=400)
-
-    item = get_object_or_404(CartItem, id=item_id, cart__user=req.user)
-    raw_ids = req.POST.getlist("recipient_ids")
-    try:
-        requested_ids = {int(value) for value in raw_ids if str(value).strip()}
-    except (TypeError, ValueError):
-        return JsonResponse({"success": False, "error": "Invalid recipient selection."}, status=400)
-
-    invites = CartInvite.objects.filter(
-        Q(inviter=req.user, status="accepted", invitee__isnull=False)
-        | Q(invitee=req.user, status="accepted")
-    ).values_list("inviter_id", "invitee_id")
-
-    eligible_ids = set()
-    for inviter_id, invitee_id in invites:
-        if inviter_id != req.user.id:
-            eligible_ids.add(inviter_id)
-        if invitee_id and invitee_id != req.user.id:
-            eligible_ids.add(invitee_id)
-
-    if not requested_ids.issubset(eligible_ids):
-        return JsonResponse(
-            {"success": False, "error": "One or more recipients are not linked to your account."},
-            status=400,
-        )
-
-    CartItemShare.objects.filter(cart_item=item).exclude(
-        recipient_id__in=requested_ids
-    ).delete()
-
-    existing = set(
-        CartItemShare.objects.filter(
-            cart_item=item, recipient_id__in=requested_ids
-        ).values_list("recipient_id", flat=True)
-    )
-    CartItemShare.objects.bulk_create(
-        [CartItemShare(cart_item=item, recipient_id=uid)
-         for uid in requested_ids - existing],
-        ignore_conflicts=True,
-    )
-    recipients = list(
-        User.objects.filter(id__in=requested_ids).values("id", "username")
-    )
-    return JsonResponse(
-        {"success": True, "recipients": recipients, "count": len(recipients)}
-    )
-
 
 def _drop_from_shared_carts(product):
     """Called after a purchase completes: quietly remove the product from
