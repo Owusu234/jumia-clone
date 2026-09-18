@@ -38,7 +38,6 @@ urlpatterns = [
     path('cart/link/accept/<uuid:token>/', views.accept_invite_via_email, name='accept_invite_via_email'),
     path('cart/link/<int:invite_id>/cancel/', views.cancel_cart_invite, name='cancel_cart_invite'),
     path('cart/link/<int:invite_id>/<str:action>/', views.respond_cart_invite, name='respond_cart_invite'),
-    path('cart/', views.cart_view, name='cart'),
     # ==================== IN-SITE CHAT & INVOICES ====================
 
     path('chat/', views.chat_inbox, name='chat_inbox'),

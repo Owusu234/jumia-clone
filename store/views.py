@@ -443,17 +443,30 @@ def home(req):
     products = paginator.get_page(req.GET.get("page"))
     cart_count = len(req.session.get('cart', {})) if req.session else 0
 
+    # "New from sellers you follow": show only the newest product from each
+    # followed seller, and only while it is within the 7-day new-product window.
     followed_updates = []
     if req.user.is_authenticated:
+        from datetime import timedelta
+        new_product_cutoff = timezone.now() - timedelta(days=7)
         followed_ids = list(
             SellerFollow.objects.filter(buyer=req.user).values_list('seller_id', flat=True)
         )
-        if followed_ids:
-            followed_updates = list(
-                Product.objects.filter(seller_id__in=followed_ids, is_active=True)
+        for seller_id in followed_ids:
+            latest = (
+                Product.objects.filter(
+                    seller_id=seller_id,
+                    is_active=True,
+                    stock__gt=0,
+                    created_at__gte=new_product_cutoff,
+                )
                 .select_related('seller')
-                .order_by('-created_at')[:12]
+                .order_by('-created_at')
+                .first()
             )
+            if latest:
+                followed_updates.append(latest)
+        followed_updates.sort(key=lambda product: product.created_at, reverse=True)
 
     return render(req, "store/home.html", {
         "products": products,
@@ -1233,6 +1246,24 @@ def cart(req):
 
     active_links = []
     shared_items, shared_total, shared_count = [], Decimal('0.00'), 0
+
+    # Items the current user explicitly shares.  Each item can have its own
+    # recipient list; the is_shared flag remains the master on/off switch.
+    my_shared_items = []
+    try:
+        own_shared = (
+            req.user.cart.items
+            .select_related('product')
+            .prefetch_related('recipient_shares__recipient')
+            .filter(product__is_active=True, is_shared=True)
+        )
+        for ci in own_shared:
+            my_shared_items.append({
+                'item': ci,
+                'recipients': list(ci.recipient_shares.all()),
+            })
+    except Cart.DoesNotExist:
+        pass
     for invite in active_invites:
         other = invite.other_party(req.user)
         if not other:
@@ -1242,9 +1273,23 @@ def cart(req):
             other_cart = other.cart
         except Cart.DoesNotExist:
             continue
-        for ci in other_cart.items.select_related('product').filter(product__is_active=True, is_shared=True):
+        for ci in (
+            other_cart.items.select_related('product')
+            .prefetch_related('recipient_shares')
+            .filter(
+                product__is_active=True,
+                is_shared=True,
+                recipient_shares__recipient=req.user,
+            )
+            .distinct()
+        ):
             subtotal = ci.product.price * Decimal(str(ci.quantity))
-            shared_items.append({'item': ci, 'owner': other, 'relation': invite.get_relation_display(), 'subtotal': subtotal})
+            shared_items.append({
+                'item': ci,
+                'owner': other,
+                'relation': invite.get_relation_display(),
+                'subtotal': subtotal,
+            })
             shared_total += subtotal
             shared_count += ci.quantity
 
@@ -1255,6 +1300,7 @@ def cart(req):
         'pending_sent': pending_sent,
         'pending_received': pending_received,
         'shared_items': shared_items, 'shared_total': shared_total, 'shared_count': shared_count,
+        'my_shared_items': my_shared_items,
         'relation_choices': CartInvite.RELATION_CHOICES,
     })
 

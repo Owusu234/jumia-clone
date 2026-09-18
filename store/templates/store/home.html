@@ -330,6 +330,7 @@
             <h6 class="fw-bold mb-0">New from sellers you follow</h6>
             <small class="text-muted">Latest uploads</small>
         </div>
+        {% if followed_updates %}
         <div class="d-flex gap-3 overflow-auto pb-2" style="scroll-snap-type: x mandatory;">
             {% for p in followed_updates %}
             <div class="flex-shrink-0" style="width: 160px; scroll-snap-align: start;">
@@ -346,6 +347,13 @@
             </div>
             {% endfor %}
         </div>
+        {% else %}
+        <div class="border rounded-3 p-4 text-center text-muted" style="border-color: var(--border) !important; background: var(--surface);">
+            <i class="bi bi-shop-window fs-3 d-block mb-2"></i>
+            <div class="fw-semibold">No new products yet</div>
+            <small>None of the sellers you follow has uploaded a new product in the last 7 days.</small>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 
