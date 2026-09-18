@@ -409,8 +409,8 @@ class CartItem(models.Model):
 
 
 class CartItemShare(models.Model):
-    """Explicit recipient for a cart item shared with a linked account."""
-    item = models.ForeignKey(
+    """Explicit recipient for an item in an account-linked shared cart."""
+    cart_item = models.ForeignKey(
         CartItem, on_delete=models.CASCADE, related_name="recipient_shares"
     )
     recipient = models.ForeignKey(
@@ -421,13 +421,14 @@ class CartItemShare(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["item", "recipient"],
+                fields=["cart_item", "recipient"],
                 name="unique_cart_item_recipient_share",
             )
         ]
+        ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.item} shared with {self.recipient.username}"
+        return f"{self.cart_item.product.name} → {self.recipient.username}"
 
 
 class SharedCartLink(models.Model):
