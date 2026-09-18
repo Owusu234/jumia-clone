@@ -20,7 +20,7 @@
   flex-direction: column;
   overflow: hidden;
   z-index: 9999;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-body, 'Inter'), system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 #sv-chat-panel.open { display: flex; }
 
