@@ -47,6 +47,28 @@
                        value="{{ profile.whatsapp_number|default:'' }}" required>
                 <div class="form-text">Used for order alerts & seller chat</div>
             </div>
+
+            {% if seller and not seller.region %}
+            <!-- Region - required for sellers -->
+            <div class="mb-3">
+                <label class="form-label fw-medium">Region/State *</label>
+                <input type="text" name="region" class="form-control"
+                       placeholder="e.g., Greater Accra, Lagos, Nairobi"
+                       value="{{ seller.region|default:'' }}" required>
+                <div class="form-text">Used for delivery & tax calculations</div>
+            </div>
+            {% endif %}
+
+            {% if seller and not seller.payment_number %}
+            <!-- Payment number - required for sellers to receive payouts -->
+            <div class="mb-4">
+                <label class="form-label fw-medium">Payment Number *</label>
+                <input type="text" name="payment_number" class="form-control"
+                       placeholder="Mobile money or bank-linked number"
+                       value="{{ seller.payment_number|default:'' }}" required>
+                <div class="form-text">Mobile money or bank number for payouts</div>
+            </div>
+            {% endif %}
             
             <button type="submit" class="btn btn-primary w-100 btn-lg">
                 Continue to ShopVibe

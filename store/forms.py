@@ -131,26 +131,6 @@ class SellerSignupForm(forms.ModelForm):
         'class': 'form-control',
         'placeholder': '+233 XX XXX XXXX'
     }))
-    description = forms.CharField(
-        required=True,
-        widget=forms.Textarea(attrs={
-            'class': 'form-control',
-            'rows': 4,
-            'placeholder': 'Describe your store, products and what makes your business unique.'
-        }),
-        help_text='Tell buyers what your store offers.'
-    )
-    payment_number = forms.CharField(
-        max_length=20,
-        required=True,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': '+233 XX XXX XXXX',
-            'inputmode': 'tel',
-            'autocomplete': 'tel'
-        }),
-        help_text='Mobile money or bank-linked number for receiving payouts.'
-    )
     whatsapp = forms.CharField(
         max_length=20, 
         required=False,
@@ -165,14 +145,23 @@ class SellerSignupForm(forms.ModelForm):
         'rows': 3,
         'placeholder': 'Your business address'
     }))
-    region = forms.CharField(required=True, widget=forms.TextInput(attrs={
+    region = forms.CharField(required=False, widget=forms.TextInput(attrs={
         'class': 'form-control',
         'placeholder': 'Region/State'
     }))
-    
+    description = forms.CharField(widget=forms.Textarea(attrs={
+        'class': 'form-control',
+        'rows': 3,
+        'placeholder': 'Tell shoppers what your store sells'
+    }))
+    payment_number = forms.CharField(max_length=20, widget=forms.TextInput(attrs={
+        'class': 'form-control',
+        'placeholder': 'Mobile money or bank-linked number for payouts'
+    }))
+
     class Meta:
         model = SellerProfile
-        fields = ['store_name', 'description', 'phone', 'payment_number', 'address', 'region']
+        fields = ['store_name', 'description', 'phone', 'address', 'region', 'payment_number']
     
 
 
