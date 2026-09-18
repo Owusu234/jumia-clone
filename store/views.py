@@ -38,7 +38,7 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"  # any model id from https://openrouter.
 # Initialize Paystack
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-from .models import Product, Category, Cart, CartItem, SharedCartLink, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
+from .models import Product, Category, Cart, CartItem, CartItemShare, SharedCartLink, CartInvite, Order, OrderItem, SellerProfile, UserProfile, Review,Region, PageView, UserNotification
 from .models import Conversation, ChatMessage, Invoice
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, SellerSignupForm, ProductUploadForm, ReviewForm
 from django.core.files.base import ContentFile
@@ -837,6 +837,44 @@ def toggle_cart_item_shared(req):
     return redirect('store:cart')
 
 
+@login_required
+@require_POST
+def update_cart_item_recipients(req):
+    """Set the linked accounts that may see one specific cart item.
+
+    Only accepted cart links are eligible recipients, and only the cart owner
+    can change the recipients for their own item.
+    """
+    try:
+        item_id = int(req.POST.get('item_id'))
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'error': 'Invalid cart item.'}, status=400)
+
+    item = CartItem.objects.filter(id=item_id, cart__user=req.user).select_related('product').first()
+    if not item:
+        return JsonResponse({'success': False, 'error': 'That cart item is not yours.'}, status=404)
+
+    linked_ids = {u.id for u in get_linked_users(req.user)}
+    raw_ids = req.POST.getlist('recipient_ids')
+    try:
+        requested_ids = {int(v) for v in raw_ids if str(v).strip()}
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid recipient selection.'}, status=400)
+
+    if not requested_ids.issubset(linked_ids):
+        return JsonResponse({'success': False, 'error': 'You can only share with accepted linked accounts.'}, status=403)
+
+    CartItemShare.objects.filter(cart_item=item).exclude(recipient_id__in=requested_ids).delete()
+    existing = set(CartItemShare.objects.filter(cart_item=item, recipient_id__in=requested_ids).values_list('recipient_id', flat=True))
+    CartItemShare.objects.bulk_create([
+        CartItemShare(cart_item=item, recipient_id=uid)
+        for uid in requested_ids - existing
+    ])
+
+    recipients = list(User.objects.filter(id__in=requested_ids).values('id', 'username'))
+    return JsonResponse({'success': True, 'recipients': recipients, 'count': len(recipients)})
+
+
 def _visible_shared_item(req, item_id, token=None):
     """Fetch a shared cart item the requester is allowed to act on: either it
     is exposed through the share link `token`, or its owner is linked to the
@@ -851,7 +889,11 @@ def _visible_shared_item(req, item_id, token=None):
     if not req.user.is_authenticated:
         return None
     owner_ids = [u.id for u in get_linked_users(req.user)]
-    return qs.filter(cart__user_id__in=owner_ids).first()
+    return qs.filter(
+        cart__user_id__in=owner_ids
+    ).filter(
+        Q(is_shared=True) | Q(recipient_shares__recipient=req.user)
+    ).distinct().first()
 
 
 @require_POST
@@ -1156,8 +1198,24 @@ def cart(req):
             shared_flags[_cart_key(ci.product_id, ci.color, ci.size)] = ci.is_shared
     except Cart.DoesNotExist:
         pass
+    own_db_items = {}
+    try:
+        own_db_items = {
+            _cart_key(ci.product_id, ci.color, ci.size): ci
+            for ci in req.user.cart.items.all()
+        }
+    except Cart.DoesNotExist:
+        pass
+    recipient_map = {}
+    if own_db_items:
+        shares = CartItemShare.objects.filter(cart_item_id__in=[ci.id for ci in own_db_items.values()])
+        for share in shares:
+            recipient_map.setdefault(share.cart_item_id, []).append(share.recipient_id)
     for entry in cart_items:
+        db_item = own_db_items.get(entry['key'])
         entry['is_shared'] = shared_flags.get(entry['key'], False)
+        entry['db_id'] = db_item.id if db_item else None
+        entry['recipient_ids'] = recipient_map.get(db_item.id, []) if db_item else []
 
     link = req.user.shared_cart_links.filter(is_active=True).first()
     share_url = (req.build_absolute_uri(reverse('store:shared_cart', args=[link.token]))
@@ -1186,11 +1244,30 @@ def cart(req):
             other_cart = other.cart
         except Cart.DoesNotExist:
             continue
-        for ci in other_cart.items.select_related('product').filter(product__is_active=True, is_shared=True):
+        for ci in other_cart.items.select_related('product').filter(product__is_active=True):
+            # Direct account shares are recipient-specific. Legacy/public link
+            # shares remain visible to linked users for backwards compatibility.
+            direct = CartItemShare.objects.filter(cart_item=ci, recipient=req.user).exists()
+            if not (direct or ci.is_shared):
+                continue
             subtotal = ci.product.price * Decimal(str(ci.quantity))
-            shared_items.append({'item': ci, 'owner': other, 'relation': invite.get_relation_display(), 'subtotal': subtotal})
+            shared_items.append({'item': ci, 'owner': other, 'relation': invite.get_relation_display(), 'subtotal': subtotal, 'direct': direct})
             shared_total += subtotal
             shared_count += ci.quantity
+
+    # Items the current user has explicitly shared with one or more linked users.
+    own_shared_items = []
+    own_cart = getattr(req.user, 'cart', None)
+    if own_cart:
+        for ci in own_cart.items.select_related('product').filter(product__is_active=True):
+            shares = list(CartItemShare.objects.filter(cart_item=ci).select_related('recipient'))
+            if shares or ci.is_shared:
+                own_shared_items.append({
+                    'item': ci,
+                    'recipients': [share.recipient for share in shares],
+                    'public': ci.is_shared,
+                    'subtotal': ci.product.price * Decimal(str(ci.quantity)),
+                })
 
     return render(req, 'store/cart.html', {
         'cart_items': cart_items, 'cart_total': cart_total, 'cart_count': cart_count,
@@ -1199,6 +1276,7 @@ def cart(req):
         'pending_sent': pending_sent,
         'pending_received': pending_received,
         'shared_items': shared_items, 'shared_total': shared_total, 'shared_count': shared_count,
+        'own_shared_items': own_shared_items,
         'relation_choices': CartInvite.RELATION_CHOICES,
     })
 
